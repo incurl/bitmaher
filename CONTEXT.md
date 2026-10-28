@@ -1,122 +1,104 @@
-# Valkyrie vocabulary
+# BitMaher vocabulary
 
 The terms below are shared between the Go backend, the React frontend and the documentation. The same terms appear in code as
-collection names (`jobs`, `artifacts`, `app_settings`) and as JSON field names.
+collection names (`download_jobs`, `job_logs`, `bt_presets`, `app_settings`) and as JSON field names.
 
 Use the **Avoid** synonyms as a signal that the term is not what you want.
 
-## Language
+## The language
+
+**Download**:
+A transfer the application knows about: an HTTP or HTTPS link, a magnet link or a torrent file. It carries the engine's handle,
+a normalised status, the counters, the error and the source.
+_Avoid_: Job, Task, Transfer, Item
 
 **Job**:
-A unit of work in the queue. It carries a title, a prompt, arbitrary parameters and an arbitrary result. It says nothing about
-what the work actually is.
-_Avoid_: Task, Request, Generation, Operation
+The stored record of a download, in the `download_jobs` collection. "Download" is what the user sees; "job" is what the record
+is called in the code and in the collection name.
+_Avoid_: Download record, Entry, Row
 
-**Runner**:
-The implementation that executes a job. It is the extension point of the scaffold: an application replaces the shipped echo
-runner with its own. A runner receives a `jobs.Job` and a `context.Context`, and returns a `jobs.Result` or an error.
-_Avoid_: Worker, Executor, Handler, Processor
+**GID**:
+The engine's own handle for a download, a short hex string such as `d668352f1df77284`. It is what every RPC call refers to, and
+it is what links a record to the engine. It survives a restart, because the engine writes it into its session file.
+_Avoid_: ID (that is the record's), Handle, Key
 
-**Echo runner**:
-The reference runner in `internal/runner/echo.go`. It waits briefly, honours the context, and returns the prompt back. It exists
-so the scaffold runs with no external service and so the queue can be exercised end to end.
-_Avoid_: Mock runner, Test runner, Default runner
+**Engine / sidecar**:
+The Aria2-Next process. "Engine" is what it does; "sidecar" is how it is packaged: a separate child process that the
+application starts, watches and stops. Both words are used, and they mean the same thing.
+_Avoid_: Server, Backend, Daemon, Worker
 
-**Reconcile**:
-The startup pass that resolves the jobs a crash left behind, marking them failed or re-enqueueing them. The scaffold does not
-do this yet: a job left in `running` is never resumed and cannot be deleted.
-_Avoid_: Recover, Replay, Resume
-
-**Retry**:
-The action that runs a finished job again with the same parameters. It creates a **new** job; it must not take the original's
-outputs with it.
-_Avoid_: Repeat, Rerun, Restart
-
-**Job status**:
-The lifecycle state of a job: `pending`, `running`, `completed`, `failed` or `cancelled`. It is a fixed enumeration, not a free
-string.
+**Status**:
+The normalised state of a download: `active`, `waiting`, `paused`, `complete`, `error` or `removed`. It is the engine's own
+six states, mapped one to one. The frontend never sees the engine's raw strings.
 _Avoid_: State, Phase, Stage
 
-**Artifact**:
-A stored file, either one the user supplied (`input`) or one the job produced (`output`). It carries the bytes, the detected
-media type and the dimensions when the content is an image.
-_Avoid_: Asset, File, Upload, Attachment, Resource
+**Kind**:
+Where a download came from: `http`, `magnet` or `torrent`. It decides which RPC call starts it and whether a file list exists.
+_Avoid_: Type, Source, Mode
 
-**Artifact kind**:
-Whether an artifact is an `input` or an `output`. It is stored in the `artifacts.kind` select field, so adding a kind means
-changing the migration.
-_Avoid_: Direction, Role, Type, Category
+**Session file**:
+The engine's own record of what it was doing, `pb_data/aria2/session.txt`. It carries the gid of every unfinished download,
+which is what lets a download be picked up again after the application restarts.
+_Avoid_: State file, Resume file, Cache
 
-**Job title**:
-The short label of a job, shown in the queue. It defaults to the first line of the prompt, truncated.
-_Avoid_: Name, Label, Summary, Subject
+**Watchdog**:
+The goroutine that notices the engine has died and starts it again, on a new port. It is on by default and can be turned off in
+the settings.
+_Avoid_: Supervisor, Monitor, Guard
 
-**Job prompt**:
-The free-form instruction of a job. The scaffold does not interpret it; the runner does.
-_Avoid_: Query, Message, Input, Description
+**Reconcile**:
+The pass that brings the records in step with the engine after a restart: the engine has picked up its session, and the records
+are updated to match. It is what makes the list show the truth rather than what it showed before the restart.
+_Avoid_: Recover, Replay, Sync
 
-**Job params**:
-The arbitrary `map[string]any` of parameters of a job. The scaffold stores them verbatim and hands them to the runner.
-_Avoid_: Options, Settings, Config, Arguments, Payload
+**Sync**:
+Reading the engine's state and updating the records. It is what the frontend polls, because the engine pushes nothing.
+_Avoid_: Refresh, Poll (that is what the frontend does), Update
 
-**Job result**:
-The arbitrary `map[string]any` a successful job produced, stored verbatim and returned to the frontend.
-_Avoid_: Output, Response, Payload, Data
+**Selection**:
+The one-based indexes of the files inside a torrent that the user chose. The engine only accepts the choice while the download
+is paused.
+_Avoid_: Files, Filter, Subset
+
+**Preset**:
+A saved set of engine options, in the `bt_presets` collection. It is the "download the same way again".
+_Avoid_: Profile, Template, Default
+
+## The licensing boundary
+
+**Separate process**:
+How the engine runs. It has its own address space, its own lifetime and its own licence. The only coupling is a loopback socket
+carrying JSON-RPC. "Separate" is the operative word: it is what keeps the two programs two programs.
+_Avoid_: Subprocess wrapper, Embedded engine, Sandbox
+
+**Boundary**:
+The line between BitMaher's own code, which is MIT, and the engine, which is GPLv2. It is held by four things: a separate
+process, no linking, no vendored sources, and a binary shipped as an opaque executable.
+_Avoid_: Interface, Layer, Abstraction
+
+## The infrastructure
 
 **Settings**:
-The key/value preferences in the `app_settings` collection. A setting is either plain or encrypted.
-_Avoid_: Preferences, Config, Configuration, Options
+The stored preferences, in the `app_settings` collection. The collection has **no** access rule, so the HTTP API cannot reach it
+and the Go backend is the only reader.
+_Avoid_: Config, Preferences, Options
 
 **Secret**:
-A setting stored encrypted, such as the API key. It is written and read only by the Go backend, and the frontend learns only
-whether one is present.
-_Avoid_: Credential, Token, API key (when used for the stored value)
+A value the backend reads and the frontend never sees: the engine's RPC secret and the API key. It is encrypted with AES-256-GCM
+before it is written, and the key is a `0600` file in the data directory. The frontend only ever learns *whether* one is set.
+_Avoid_: Token, Key, Password
 
-**Fingerprint**:
-A short, non-reversible digest of a secret, shown in the debug console so that two keys can be told apart without revealing
-either.
-_Avoid_: Hash, Mask, Redacted key
+**RPC secret**:
+The token the engine authenticates its caller with. It is generated once, on the first run, and stored encrypted. It never leaves
+the machine and is never sent to the frontend.
+_Avoid_: Password, Auth token, API key
 
-**Debug console**:
-The in-memory log of the application traffic, shown in a panel at the bottom of the window. It is capped at 500 entries and is
-not persisted: it is a debugging aid, not an audit trail. It is hidden until it is asked for, with Ctrl+Shift+I or with the
-button in the header.
-_Avoid_: Log viewer, Audit log, DevTools
+**Console**:
+The in-memory debug log at the bottom of the window, toggled with `Ctrl+Shift+I`. It holds the last 500 entries and is not
+persisted: it is a debugging aid, not an audit trail.
+_Avoid_: Log, Output, Terminal
 
-**Console entry**:
-One record of the debug console: a level, a source, a message and an optional verbatim detail.
-_Avoid_: Log line, Record
-
-**Binding**:
-A TypeScript wrapper around the Wails-generated bindings, exported from `frontend/src/bindings/index.ts`. It is the only place
-the frontend is allowed to import generated code from.
-_Avoid_: Generated binding (that is the file under `frontend/bindings/`), API client, Service
-
-**Generated binding**:
-The machine-written TypeScript under `frontend/bindings/`, produced by `wails3 generate bindings`. It is gitignored and must
-never be edited by hand.
-_Avoid_: Wrapper, Client, Types
-
-**Wails service**:
-A Go type bound to the frontend, exposed through `application.NewService(...)` in `main.go`. There is one: `AppService`.
-_Avoid_: Controller, Handler, API
-
-**Event**:
-A Wails event that pushes a backend change to the frontend. Two exist: `job:updated` and `console:entry`. Both are registered
-in `main.go` with `application.RegisterEvent`, which is what makes the generator emit a typed TS API for them.
-_Avoid_: Message, Signal, Subscription
-
-**Data directory**:
-The directory holding the database, the stored files and the encryption key. It is `pb_data` next to the executable, and
-`VALKYRIE_DATA_DIR` relocates it.
-_Avoid_: Database directory, Storage path, App data
-
-**Migration**:
-A Go function registered with PocketBase's migration list, which creates or evolves the schema. The file name is the identity
-and the ordering key.
-_Avoid_: Schema file, Upgrade, Patch
-
-**Server mode**:
-The headless build of the same binary, compiled with `-tags server`. It serves the frontend and the PocketBase API over HTTP
-with no GUI dependencies.
-_Avoid_: Web mode, Headless mode, Docker mode
+**Bundle**:
+The engine binary shipped inside the application. It is embedded with `go:embed` and copied to a writable cache directory before
+it is started, because the install directory is not always writable.
+_Avoid_: Binary, Payload, Asset

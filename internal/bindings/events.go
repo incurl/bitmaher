@@ -2,22 +2,15 @@ package bindings
 
 import (
 	"github.com/incurl/bitmaher/internal/console"
-	"github.com/incurl/bitmaher/internal/jobs"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
-
-// EventJobUpdated is emitted whenever a job changes state. The payload
-// is a jobs.Job.
-const EventJobUpdated = "job:updated"
 
 // EventConsoleEntry is emitted whenever a debug console entry is added.
 // The payload is a console.Entry.
 const EventConsoleEntry = "console:entry"
 
-// EventBridge pushes job updates to the frontend as Wails events.
-//
-// The frontend also polls via React Query, so a missed event only delays
-// a refresh rather than losing an update.
+// EventBridge pushes the debug console entries to the frontend as
+// Wails events.
 type EventBridge struct {
 	app *application.App
 }
@@ -25,14 +18,6 @@ type EventBridge struct {
 // NewEventBridge creates an event bridge.
 func NewEventBridge(app *application.App) *EventBridge {
 	return &EventBridge{app: app}
-}
-
-// EmitJobUpdated implements jobs.EventEmitter.
-func (b *EventBridge) EmitJobUpdated(job jobs.Job) {
-	if b == nil || b.app == nil {
-		return
-	}
-	b.app.Event.Emit(EventJobUpdated, job)
 }
 
 // EmitConsoleEntry implements console.Emitter.

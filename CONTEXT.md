@@ -1,6 +1,6 @@
 # BitMaher vocabulary
 
-The terms below are shared between the Go backend, the React frontend and the documentation. The same terms appear in code as
+The terms below are shared between the Go backend, the Vue frontend and the documentation. The same terms appear in code as
 collection names (`download_jobs`, `job_logs`, `bt_presets`, `app_settings`) and as JSON field names.
 
 Use the **Avoid** synonyms as a signal that the term is not what you want.
@@ -26,6 +26,16 @@ _Avoid_: ID (that is the record's), Handle, Key
 The Aria2-Next process. "Engine" is what it does; "sidecar" is how it is packaged: a separate child process that the
 application starts, watches and stops. Both words are used, and they mean the same thing.
 _Avoid_: Server, Backend, Daemon, Worker
+
+**Pump**:
+The single reader of the engine's state. It ticks every 500 ms and publishes the whole state as one snapshot. The frontend
+never polls the engine: it waits for the snapshot and replaces its list with it. This is Rayburst's model, ported to Go.
+_Avoid_: Poller, Refresher, Ticker, Watcher
+
+**Snapshot**:
+The state of the engine at one moment: the global statistics and every download. It is published as the `tasks:snapshot`
+event, and it is what the interface renders.
+_Avoid_: State, Sync, Update, Delta
 
 **Status**:
 The normalised state of a download: `active`, `waiting`, `paused`, `complete`, `error` or `removed`. It is the engine's own

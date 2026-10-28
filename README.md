@@ -8,8 +8,12 @@ a list of the downloads with their progress, the details of each one, and
 a dialog to add a link, a magnet or a torrent file.
 
 It is built on [Wails v3](https://wails.io) (the desktop shell),
-[PocketBase](https://pocketbase.io) (the embedded database) and React (the
+[PocketBase](https://pocketbase.io) (the embedded database) and Vue 3 (the
 interface).
+
+The interface is a port of **Rayburst**, the frontend of
+[Motrix Next](https://github.com/Rayburst/Motrix-Next), which is MIT
+licensed. The attribution is in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## The download engine, and why it is a separate process
 
@@ -35,8 +39,9 @@ changes. Keep it.
 # The bundled aria2-next binaries (about 18 MB each, not in the repository).
 PATH="$HOME/go/bin:$PATH" wails3 task common:fetch:aria2
 
-# The frontend dependencies.
-cd frontend && npm install --legacy-peer-deps && cd ..
+# The frontend dependencies. pnpm is the package manager: the lockfile
+# is pnpm's, and the build was checked against the tree it produces.
+cd frontend && pnpm install && cd ..
 
 # The development build.
 PATH="$HOME/go/bin:$PATH" wails3 task dev
@@ -55,15 +60,24 @@ PATH="$HOME/go/bin:$PATH" wails3 task package     # the platform packages
 ## How it is put together
 
 ```
-frontend/            the React interface
-  src/features/downloads/   the list, the sidebar, the dialogs
-  src/bindings/              the typed wrappers over the Wails bindings
+frontend/            the Vue interface
+  src/components/          the panels: the task list, the detail, the settings
+  src/stores/              the Pinia stores: the tasks, the engine, the preferences
+  src/api/                 the calls to the backend, and the adapters of its shapes
+  src/platform/            the Tauri-compatible layer over the Wails runtime
+  src/shared/              the pure logic: the types, the constants, the helpers
 internal/
   aria2/             the sidecar: the lifecycle and the JSON-RPC client
   downloads/         the domain: the records and the service
   pocketbase/        the embedded database and its migrations
+  pump/              the reader of the engine's state, and the snapshot it publishes
   bindings/          the Wails service: the API of the application
 ```
+
+The frontend never polls the engine. The Go pump (`internal/pump`) is the
+single reader of the engine's state: it ticks, and it publishes the whole
+state as a `tasks:snapshot` event. The interface waits for the snapshot
+and replaces its list with it.
 
 The engine's vocabulary never reaches the frontend. `internal/aria2`
 translates the six states Aria2-Next reports into the six the interface
@@ -116,9 +130,10 @@ go run ./tools/watchdog-check     # a crashed sidecar is started again
 go run ./tools/bundled-check      # the bundled binary is found and run
 go run ./tools/leak-check         # no sidecar outlives the application
 go run ./tools/torrent-check      # a torrent's files are listed and chosen
+go run ./tools/pump-check         # the pump publishes the snapshots
 
 # The frontend
-cd frontend && npm run typecheck && npm test && npm run build
+cd frontend && pnpm run typecheck && pnpm test && pnpm run build
 
 # The licences
 python3 tools/license-audit.py

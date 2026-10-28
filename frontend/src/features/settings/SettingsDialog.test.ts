@@ -3,8 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { formatZoom, SETTINGS_TABS } from './SettingsDialog';
 
 describe('SETTINGS_TABS', () => {
-  it('lists the connection and the zoom tabs, in that order', () => {
-    expect(SETTINGS_TABS.map((tab) => tab.value)).toEqual(['connection', 'zoom']);
+  it('lists the connection, the engine and the zoom tabs, in that order', () => {
+    expect(SETTINGS_TABS.map((tab) => tab.value)).toEqual(['connection', 'engine', 'zoom']);
   });
 });
 

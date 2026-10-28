@@ -9,10 +9,13 @@
  * checked in.
  */
 
-import * as AppServiceBindings from '../../bindings/github.com/incurl/valkyrie/internal/bindings/appservice';
-import * as BindingsModels from '../../bindings/github.com/incurl/valkyrie/internal/bindings/models';
-import * as JobsModels from '../../bindings/github.com/incurl/valkyrie/internal/jobs/models';
-import * as ConsoleModels from '../../bindings/github.com/incurl/valkyrie/internal/console/models';
+import * as AppServiceBindings from '../../bindings/github.com/incurl/bitmaher/internal/bindings/appservice';
+import * as BindingsModels from '../../bindings/github.com/incurl/bitmaher/internal/bindings/models';
+import * as JobsModels from '../../bindings/github.com/incurl/bitmaher/internal/jobs/models';
+import * as ConsoleModels from '../../bindings/github.com/incurl/bitmaher/internal/console/models';
+import * as Aria2Models from '../../bindings/github.com/incurl/bitmaher/internal/aria2/models';
+import * as DownloadsModels from '../../bindings/github.com/incurl/bitmaher/internal/downloads/models';
+import * as PocketbaseModels from '../../bindings/github.com/incurl/bitmaher/internal/pocketbase/models';
 
 // The generated model classes are the source of truth for the shapes that
 // cross the Wails boundary. The status and kind fields are narrowed to
@@ -35,11 +38,78 @@ export type Artifact = JobsModels.Artifact & {
 export type ConsoleEntry = ConsoleModels.Entry;
 
 /**
+ * The status of a download.
+ *
+ * The values are the normalised ones: the engine's own vocabulary never
+ * reaches the frontend.
+ */
+export type DownloadStatus =
+  | 'active'
+  | 'waiting'
+  | 'paused'
+  | 'complete'
+  | 'error'
+  | 'removed';
+
+/**
+ * The kind of a download.
+ */
+export type DownloadKind = 'http' | 'torrent' | 'magnet';
+
+/**
+ * A download as the frontend sees it.
+ */
+export type Download = Omit<BindingsModels.DownloadView, 'status' | 'kind'> & {
+  status: DownloadStatus;
+  kind: DownloadKind;
+  // The generated types make these nullable, but the backend always
+  // sends an array and a map.
+  selected_files: number[];
+  options: Record<string, string>;
+};
+
+/**
+ * One file of a download.
+ */
+export type DownloadFile = BindingsModels.FileView;
+
+/**
+ * A request to start a download.
+ */
+export type AddDownloadRequest = Omit<
+  BindingsModels.AddDownloadRequest,
+  'selected_files' | 'options'
+> & {
+  selected_files: number[];
+  options: Record<string, string>;
+};
+
+/**
+ * The engine's global state.
+ */
+export type DownloadStat = Aria2Models.GlobalStat;
+
+/**
+ * A saved download preset.
+ */
+export type Preset = Omit<DownloadsModels.Preset, 'options'> & {
+  options: Record<string, string>;
+};
+
+/**
+ * The sidecar settings.
+ */
+export type Aria2Settings = PocketbaseModels.Aria2;
+
+/**
  * The application settings as seen by the UI.
  *
  * The API key is never returned by the backend, only its presence.
  */
-export type Settings = BindingsModels.SettingsView;
+export type Settings = Omit<BindingsModels.SettingsView, 'aria2'> & {
+  aria2: Aria2Settings;
+};
+
 
 /**
  * The Wails event name emitted when a job changes state.
@@ -152,4 +222,108 @@ export function saveUI(ui: { zoom: number; theme: string }): Promise<void> {
 /**
  * The generated model classes, re-exported for callers that need them.
  */
-export { JobsModels, BindingsModels, ConsoleModels };
+export { JobsModels, BindingsModels, ConsoleModels, Aria2Models, DownloadsModels, PocketbaseModels };
+
+/**
+ * Stores the sidecar settings.
+ *
+ * The RPC secret is not part of the settings: the backend generates it
+ * once and never sends it back.
+ */
+export function saveAria2(settings: Aria2Settings): Promise<void> {
+  return AppServiceBindings.SaveAria2(settings as never) as Promise<void>;
+}
+
+/**
+ * Lists the recorded downloads, newest first.
+ */
+export function listDownloads(limit = 200): Promise<Download[]> {
+  return AppServiceBindings.ListDownloads(limit) as unknown as Promise<Download[]>;
+}
+
+/**
+ * Reads the state of the engine and updates the records.
+ *
+ * The engine does not push its updates, so the frontend polls this
+ * call: it is the only way to learn that a download moved.
+ */
+export function syncDownloads(): Promise<Download[]> {
+  return AppServiceBindings.SyncDownloads() as unknown as Promise<Download[]>;
+}
+
+/**
+ * Starts a download.
+ */
+export function addDownload(request: AddDownloadRequest): Promise<Download> {
+  return AppServiceBindings.AddDownload(request as never) as unknown as Promise<Download>;
+}
+
+/**
+ * Pauses a download.
+ */
+export function pauseDownload(id: string): Promise<void> {
+  return AppServiceBindings.PauseDownload(id) as Promise<void>;
+}
+
+/**
+ * Resumes a paused download.
+ */
+export function resumeDownload(id: string): Promise<void> {
+  return AppServiceBindings.ResumeDownload(id) as Promise<void>;
+}
+
+/**
+ * Removes a download from the engine and forgets it.
+ */
+export function removeDownload(id: string): Promise<void> {
+  return AppServiceBindings.RemoveDownload(id) as Promise<void>;
+}
+
+/**
+ * Removes the finished downloads.
+ */
+export function purgeDownloads(): Promise<void> {
+  return AppServiceBindings.PurgeDownloads() as Promise<void>;
+}
+
+/**
+ * Returns the files of a download.
+ */
+export function downloadFiles(id: string): Promise<DownloadFile[]> {
+  return AppServiceBindings.DownloadFiles(id) as unknown as Promise<DownloadFile[]>;
+}
+
+/**
+ * Chooses the files of a torrent.
+ */
+export function selectDownloadFiles(id: string, indexes: number[]): Promise<void> {
+  return AppServiceBindings.SelectDownloadFiles(id, indexes) as Promise<void>;
+}
+
+/**
+ * Returns the engine's global state.
+ */
+export function downloadStat(): Promise<DownloadStat> {
+  return AppServiceBindings.DownloadStat() as unknown as Promise<DownloadStat>;
+}
+
+/**
+ * Lists the saved download presets.
+ */
+export function listPresets(): Promise<Preset[]> {
+  return AppServiceBindings.ListPresets() as unknown as Promise<Preset[]>;
+}
+
+/**
+ * Stores a download preset.
+ */
+export function savePreset(preset: Preset): Promise<Preset> {
+  return AppServiceBindings.SavePreset(preset as never) as unknown as Promise<Preset>;
+}
+
+/**
+ * Removes a download preset.
+ */
+export function deletePreset(id: string): Promise<void> {
+  return AppServiceBindings.DeletePreset(id) as Promise<void>;
+}

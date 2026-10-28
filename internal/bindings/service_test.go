@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/incurl/valkyrie/internal/console"
-	"github.com/incurl/valkyrie/internal/jobs"
-	"github.com/incurl/valkyrie/internal/pocketbase"
+	"github.com/incurl/bitmaher/internal/console"
+	"github.com/incurl/bitmaher/internal/jobs"
+	"github.com/incurl/bitmaher/internal/pocketbase"
 )
 
 // newTestService creates an application service backed by a throwaway
@@ -32,7 +32,7 @@ func newTestService(t *testing.T, runner jobs.Runner) (*AppService, *jobs.Manage
 	log := console.New()
 	manager := jobs.NewManager(pb.App(), jobs.WithRunner(runner), jobs.WithLog(log))
 
-	return NewAppService(pb, settings, manager, log), manager
+	return NewAppService(pb, settings, manager, log, nil), manager
 }
 
 // okRunner is a runner that always succeeds.

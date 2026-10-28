@@ -1,4 +1,4 @@
-// Package bindings exposes the Valkyrie backend to the frontend as
+// Package bindings exposes the BitMaher backend to the frontend as
 // Wails services.
 //
 // These are the primary communication channel between the React UI and
@@ -7,9 +7,10 @@
 package bindings
 
 import (
-	"github.com/incurl/valkyrie/internal/console"
-	"github.com/incurl/valkyrie/internal/jobs"
-	"github.com/incurl/valkyrie/internal/pocketbase"
+	"github.com/incurl/bitmaher/internal/console"
+	"github.com/incurl/bitmaher/internal/downloads"
+	"github.com/incurl/bitmaher/internal/jobs"
+	"github.com/incurl/bitmaher/internal/pocketbase"
 )
 
 // AppService is the main Wails service. It is bound to the frontend and
@@ -19,16 +20,29 @@ type AppService struct {
 	settings *pocketbase.SettingsStore
 	jobs     *jobs.Manager
 	console  *console.Log
+	// downloads drives the Aria2-Next sidecar and keeps the download
+	// records.
+	downloads *downloads.Service
 }
 
 // NewAppService creates the application service.
+//
+// The download service is optional: the application runs without it,
+// and the download calls then report that the engine is not running.
 func NewAppService(
 	pb *pocketbase.Service,
 	settings *pocketbase.SettingsStore,
 	jobManager *jobs.Manager,
 	log *console.Log,
+	downloadService *downloads.Service,
 ) *AppService {
-	return &AppService{pb: pb, settings: settings, jobs: jobManager, console: log}
+	return &AppService{
+		pb:        pb,
+		settings:  settings,
+		jobs:      jobManager,
+		console:   log,
+		downloads: downloadService,
+	}
 }
 
 // The service deliberately exposes no accessors for the objects it
@@ -59,7 +73,7 @@ func (s *AppService) ClearConsoleEntries() {
 // SettingsView is the settings as the frontend sees them.
 //
 // The API key is never included: the frontend only learns whether one
-// is configured.
+// is configured. The same is true of the RPC secret of the sidecar.
 type SettingsView struct {
 	// HasAPIKey reports whether an API key is stored.
 	HasAPIKey bool `json:"has_api_key"`
@@ -67,6 +81,8 @@ type SettingsView struct {
 	BaseURL string `json:"base_url"`
 	// UI holds the interface preferences.
 	UI pocketbase.UI `json:"ui"`
+	// Aria2 holds the sidecar settings.
+	Aria2 pocketbase.Aria2 `json:"aria2"`
 }
 
 // GetSettings returns the application settings.
@@ -91,7 +107,21 @@ func (s *AppService) GetSettings() (SettingsView, error) {
 	}
 	view.UI = ui
 
+	aria2Settings, err := s.settings.GetAria2()
+	if err != nil {
+		return SettingsView{}, err
+	}
+	view.Aria2 = aria2Settings
+
 	return view, nil
+}
+
+// SaveAria2 stores the sidecar settings.
+//
+// The RPC secret is not part of the settings: it is generated once and
+// stored encrypted, and the frontend never sees it.
+func (s *AppService) SaveAria2(settings pocketbase.Aria2) error {
+	return s.settings.SetAria2(settings)
 }
 
 // SaveCredentials stores the API credentials.
@@ -170,7 +200,7 @@ func (s *AppService) DeleteArtifact(artifactID string) error {
 }
 
 // AppName is the name of the application.
-const AppName = "Valkyrie"
+const AppName = "BitMaher"
 
 // AppVersion is the version of the application.
 const AppVersion = "0.1.0"

@@ -132,6 +132,23 @@ code {
   border-bottom: 0.0769rem solid var(--border);
 }
 
+.app-logo {
+  /* The icon is square and it is never stretched: the header is a
+   * flex row, so it would otherwise grow with the row. */
+  flex: none;
+  width: 1.6923rem;
+  height: 1.6923rem;
+  /* The artwork has a white background, so it is clipped to a rounded
+   * chip and given a border. Without the clip it reads as a white
+   * block in the dark header. */
+  border-radius: 0.3077rem;
+  object-fit: cover;
+  border: 0.0769rem solid var(--border-strong);
+  /* The icon belongs to the title, so it sits closer to it than the
+   * header's own spacing would put it. */
+  margin-right: -0.5385rem;
+}
+
 .app-brand {
   font-weight: 600;
   font-size: 1.1538rem;

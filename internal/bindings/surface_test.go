@@ -14,18 +14,32 @@ import (
 // deliberate act, and a method that returns an internal type is a
 // mistake this test catches.
 var expectedMethods = []string{
+	"AddDownload",
 	"CancelJob",
 	"ClearConsoleEntries",
 	"DeleteArtifact",
 	"DeleteJob",
+	"DeletePreset",
+	"DownloadFiles",
+	"DownloadStat",
 	"GetSettings",
 	"ListArtifacts",
 	"ListConsoleEntries",
+	"ListDownloads",
 	"ListJobs",
+	"ListPresets",
+	"PauseDownload",
+	"PurgeDownloads",
+	"RemoveDownload",
+	"ResumeDownload",
 	"RetryJob",
+	"SaveAria2",
 	"SaveCredentials",
+	"SavePreset",
 	"SaveUI",
+	"SelectDownloadFiles",
 	"SubmitJob",
+	"SyncDownloads",
 }
 
 // TestAppServiceExposesExactlyTheIntendedMethods pins the bound surface.
@@ -71,11 +85,16 @@ func TestNoBoundMethodReturnsAnInternalType(t *testing.T) {
 	// The value types the frontend genuinely needs.
 	allowed := map[string]bool{
 		"bindings.SettingsView": true,
+		"bindings.DownloadView": true,
+		"bindings.FileView":     true,
 		"jobs.Artifact":         true,
 		"jobs.Job":              true,
 		"jobs.Request":          true,
 		"console.Entry":         true,
 		"pocketbase.UI":         true,
+		"pocketbase.Aria2":      true,
+		"downloads.Preset":      true,
+		"aria2.GlobalStat":      true,
 	}
 
 	for i := 0; i < typ.NumMethod(); i++ {

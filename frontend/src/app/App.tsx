@@ -1,36 +1,55 @@
 /**
- * The Valkyrie application shell.
+ * The BitMaher application shell.
  *
- * The layout is a left control rail, a centre canvas and a right
- * sidebar, with the job queue in the header area.
+ * The layout is the clean, low-friction one of a download manager: a
+ * sidebar with the categories, a table of the downloads in the middle
+ * and a detail drawer on the right.
  *
  * The debug console sits at the bottom of the window. It is hidden
  * until it is asked for, with Ctrl+Shift+I or with the button in the
  * header, so that it does not take the room of the panels above it.
  *
  * All backend access goes through the Wails bindings; the frontend never
- * talks to PocketBase or to a remote API directly.
+ * talks to PocketBase or to the download engine directly.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Events } from '@wailsio/runtime';
 
 import '../styles.css';
 
 import * as api from '../bindings';
-import type { Job } from '../bindings';
+import type { Download, DownloadFile } from '../bindings';
 import { applyZoom } from '../ui/zoom';
 import { isConsoleShortcut } from '../ui/shortcuts';
 import { ConsolePanel, countErrors } from '../features/console/ConsolePanel';
-import { JobQueue } from '../features/queue/JobQueue';
 import { SettingsDialog } from '../features/settings/SettingsDialog';
-import { SubmitPanel } from '../features/submit/SubmitPanel';
+import { AddTaskModal } from '../features/downloads/AddTaskModal';
+import { FileSelectionDialog } from '../features/downloads/FileSelectionDialog';
+import { Sidebar } from '../features/downloads/Sidebar';
+import { TaskDetailDrawer } from '../features/downloads/TaskDetailDrawer';
+import { TaskList } from '../features/downloads/TaskList';
+import { filterByCategory, formatSpeed, isFinishedStatus } from '../features/downloads/format';
+import type { DownloadCategory } from '../features/downloads/format';
 
 interface Toast {
   message: string;
   kind: 'info' | 'error' | 'success';
 }
+
+/**
+ * The poll interval of the download list.
+ *
+ * The engine does not push its updates: it answers a question, and the
+ * application has to ask. The WebSocket transport accepts a connection
+ * but never sends anything on it, so polling is the only way to learn
+ * that a download moved.
+ *
+ * The interval is short enough to feel live and long enough not to
+ * hammer the engine.
+ */
+const SYNC_INTERVAL = 1000;
 
 /**
  * The application root.
@@ -41,6 +60,12 @@ function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [consoleOpen, setConsoleOpen] = useState(false);
   const [toast, setToast] = useState<Toast | null>(null);
+
+  const [category, setCategory] = useState<DownloadCategory>('all');
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
+  const [fileSelectFor, setFileSelectFor] = useState<Download | null>(null);
+  const [files, setFiles] = useState<DownloadFile[]>([]);
 
   // The toast timer is kept so that a second toast replaces the first
   // instead of being dismissed by the first one's timer.
@@ -74,11 +99,23 @@ function App() {
     queryFn: () => api.getSettings(),
   });
 
-  const jobsQuery = useQuery({
-    queryKey: ['jobs'],
-    queryFn: () => api.listJobs(50),
-    // The Wails event pushes updates; this interval is the fallback.
-    refetchInterval: 5000,
+  // The download list. The poll is the live update: the engine pushes
+  // nothing, so this is what keeps the list in step with it.
+  const downloadsQuery = useQuery({
+    queryKey: ['downloads'],
+    queryFn: async () => {
+      // The sync reads the engine and updates the records, so the
+      // list is the stored state and the engine is the truth.
+      await api.syncDownloads();
+      return api.listDownloads(200);
+    },
+    refetchInterval: SYNC_INTERVAL,
+  });
+
+  const statQuery = useQuery({
+    queryKey: ['download-stat'],
+    queryFn: () => api.downloadStat(),
+    refetchInterval: SYNC_INTERVAL * 2,
   });
 
   const consoleQuery = useQuery({
@@ -89,9 +126,6 @@ function App() {
 
   // --- Live updates -------------------------------------------------
 
-  // The job event keeps the queue in step with the backend without
-  // polling. The refetch interval above is only the safety net, so a
-  // missed event only delays a refresh.
   useEffect(() => {
     const unsubscribe = Events.On(api.EVENT_JOB_UPDATED, () => {
       void queryClient.invalidateQueries({ queryKey: ['jobs'] });
@@ -131,43 +165,68 @@ function App() {
 
   // --- Actions ------------------------------------------------------
 
-  const submitMutation = useMutation({
-    mutationFn: (request: { prompt: string; params?: Record<string, unknown> }) =>
-      api.submitJob(request),
-    onSuccess: (job: Job) => {
-      void queryClient.invalidateQueries({ queryKey: ['jobs'] });
-      notify(`The job "${job.title}" was queued.`, 'success');
+  const addMutation = useMutation({
+    mutationFn: (request: api.AddDownloadRequest) => api.addDownload(request),
+    onSuccess: (download: Download) => {
+      void queryClient.invalidateQueries({ queryKey: ['downloads'] });
+      setAddOpen(false);
+      notify(`"${download.title}" was started.`, 'success');
     },
     onError: (error: Error) => {
       notify(error.message, 'error');
     },
   });
 
-  const cancelMutation = useMutation({
-    mutationFn: (jobId: string) => api.cancelJob(jobId),
+  const pauseMutation = useMutation({
+    mutationFn: (id: string) => api.pauseDownload(id),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['jobs'] });
+      void queryClient.invalidateQueries({ queryKey: ['downloads'] });
     },
     onError: (error: Error) => {
       notify(error.message, 'error');
     },
   });
 
-  const retryMutation = useMutation({
-    mutationFn: (jobId: string) => api.retryJob(jobId),
+  const resumeMutation = useMutation({
+    mutationFn: (id: string) => api.resumeDownload(id),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['jobs'] });
-      notify('The job was queued again.', 'success');
+      void queryClient.invalidateQueries({ queryKey: ['downloads'] });
     },
     onError: (error: Error) => {
       notify(error.message, 'error');
     },
   });
 
-  const deleteMutation = useMutation({
-    mutationFn: (jobId: string) => api.deleteJob(jobId),
+  const removeMutation = useMutation({
+    mutationFn: (id: string) => api.removeDownload(id),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['jobs'] });
+      void queryClient.invalidateQueries({ queryKey: ['downloads'] });
+      setSelectedId(null);
+      notify('The download was removed.', 'success');
+    },
+    onError: (error: Error) => {
+      notify(error.message, 'error');
+    },
+  });
+
+  const purgeMutation = useMutation({
+    mutationFn: () => api.purgeDownloads(),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['downloads'] });
+      notify('The finished downloads were cleared.', 'success');
+    },
+    onError: (error: Error) => {
+      notify(error.message, 'error');
+    },
+  });
+
+  const selectFilesMutation = useMutation({
+    mutationFn: ({ id, indexes }: { id: string; indexes: number[] }) =>
+      api.selectDownloadFiles(id, indexes),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['downloads'] });
+      setFileSelectFor(null);
+      notify('The files were chosen.', 'success');
     },
     onError: (error: Error) => {
       notify(error.message, 'error');
@@ -208,6 +267,17 @@ function App() {
     },
   });
 
+  const saveAria2Mutation = useMutation({
+    mutationFn: (settings: api.Aria2Settings) => api.saveAria2(settings),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['settings'] });
+      notify('The engine settings were saved. Restart the application to apply them.', 'success');
+    },
+    onError: (error: Error) => {
+      notify(`The engine settings could not be saved: ${error.message}`, 'error');
+    },
+  });
+
   // The zoom is restored as soon as the settings are known.
   useEffect(() => {
     if (settingsQuery.data) {
@@ -215,26 +285,61 @@ function App() {
     }
   }, [settingsQuery.data]);
 
-  const jobs = jobsQuery.data ?? [];
+  const downloads = downloadsQuery.data ?? [];
   const entries = consoleQuery.data ?? [];
   const consoleErrors = countErrors(entries);
 
+  // The list shows the downloads of the chosen category.
+  const visible = useMemo(() => filterByCategory(downloads, category), [downloads, category]);
+
+  // The drawer shows the download that is selected.
+  const selected = useMemo(
+    () => downloads.find((item) => item.id === selectedId) ?? null,
+    [downloads, selectedId],
+  );
+
+  // The files of the selected download are fetched when it changes.
+  useEffect(() => {
+    if (!selected) {
+      setFiles([]);
+      return;
+    }
+
+    let cancelled = false;
+    void api
+      .downloadFiles(selected.id)
+      .then((list) => {
+        if (!cancelled) {
+          setFiles(list);
+        }
+      })
+      .catch(() => {
+        // A download that the engine no longer knows about has no
+        // files to show. That is not worth a message.
+        if (!cancelled) {
+          setFiles([]);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selected]);
+
   return (
-    <div className="app">
+    <div className="app app-downloads">
       <header className="app-header">
         <span className="app-brand">
-          Valkyrie
-          <small>Wails v3 · PocketBase · React</small>
+          BitMaher
+          <small>Wails v3 · PocketBase · aria2-next</small>
         </span>
 
         <span className="app-header-spacer" />
 
-        <JobQueue
-          jobs={jobs}
-          onCancel={(jobId) => cancelMutation.mutate(jobId)}
-          onRetry={(jobId) => retryMutation.mutate(jobId)}
-          onDelete={(jobId) => deleteMutation.mutate(jobId)}
-        />
+        <span className="app-speed" title="The speed of all the downloads together">
+          {formatSpeed(statQuery.data?.download_speed ?? 0)} down ·{' '}
+          {formatSpeed(statQuery.data?.upload_speed ?? 0)} up
+        </span>
 
         <button
           type="button"
@@ -254,55 +359,41 @@ function App() {
         </button>
       </header>
 
-      <aside className="app-rail">
-        <SubmitPanel
-          disabled={submitMutation.isPending}
-          onSubmit={(prompt, params) => submitMutation.mutate({ prompt, params })}
-        />
-      </aside>
+      <Sidebar
+        category={category}
+        onCategoryChange={setCategory}
+        downloads={downloads}
+        onAdd={() => setAddOpen(true)}
+        onPurge={() => purgeMutation.mutate()}
+        canPurge={downloads.some((item) => isFinishedStatus(item.status))}
+      />
 
       <main className="app-canvas">
-        <section className="panel">
-          <div className="panel-header">
-            <span>Getting started</span>
-          </div>
-          <div className="panel-body">
-            <p className="text-dim">
-              This is the Valkyrie scaffold. It ships a generic job queue, an
-              embedded PocketBase and a React shell. Replace the runner in
-              <code> internal/runner</code> with your own backend, then extend
-              the panels to match.
-            </p>
-            <p className="text-dim">
-              Submit a prompt on the left to see the whole pipeline work: the
-              job is persisted, queued, executed by the runner and pushed back
-              to this window as a Wails event.
-            </p>
-          </div>
-        </section>
+        <TaskList
+          downloads={visible}
+          selectedId={selectedId}
+          onSelect={(id) => setSelectedId((current) => (current === id ? null : id))}
+          onPause={(id) => pauseMutation.mutate(id)}
+          onResume={(id) => resumeMutation.mutate(id)}
+          onRemove={(id) => removeMutation.mutate(id)}
+          emptyMessage={
+            category === 'all'
+              ? 'No downloads yet. Add one to get started.'
+              : 'Nothing in this category.'
+          }
+        />
       </main>
 
-      <aside className="app-gallery">
-        <section className="panel">
-          <div className="panel-header">
-            <span>Connection</span>
-          </div>
-          <div className="panel-body">
-            <div className="field">
-              <span className="field-label">API key</span>
-              <span className="text-dim">
-                {settingsQuery.data?.has_api_key
-                  ? 'Configured. It is stored encrypted and never sent back to the UI.'
-                  : 'Not configured. Add one in Settings.'}
-              </span>
-            </div>
-            <div className="field">
-              <span className="field-label">Base URL</span>
-              <span className="text-dim">{settingsQuery.data?.base_url ?? '—'}</span>
-            </div>
-          </div>
-        </section>
-      </aside>
+      {selected && (
+        <TaskDetailDrawer
+          download={selected}
+          files={files}
+          onClose={() => setSelectedId(null)}
+          onPause={(id) => pauseMutation.mutate(id)}
+          onResume={(id) => resumeMutation.mutate(id)}
+          onRemove={(id) => removeMutation.mutate(id)}
+        />
+      )}
 
       {consoleOpen && (
         <ConsolePanel
@@ -311,17 +402,43 @@ function App() {
         />
       )}
 
-      <SettingsDialog
-        open={settingsOpen}
-        settings={settingsQuery.data ?? null}
-        onClose={() => setSettingsOpen(false)}
-        onSave={(apiKey, baseUrl) => {
-          saveCredentialsMutation.mutate({ apiKey, baseUrl });
-        }}
-        onSaveUI={(ui) => {
-          saveUIMutation.mutate(ui);
-        }}
+      <AddTaskModal
+        open={addOpen}
+        defaultDir={settingsQuery.data?.aria2.download_dir ?? ''}
+        onClose={() => setAddOpen(false)}
+        onSubmit={(request) => addMutation.mutate(request)}
+        busy={addMutation.isPending}
       />
+
+      <FileSelectionDialog
+        open={fileSelectFor !== null}
+        files={files}
+        title={fileSelectFor?.title ?? ''}
+        onClose={() => setFileSelectFor(null)}
+        onApply={(indexes) => {
+          if (fileSelectFor) {
+            selectFilesMutation.mutate({ id: fileSelectFor.id, indexes });
+          }
+        }}
+        busy={selectFilesMutation.isPending}
+      />
+
+      {settingsOpen && (
+        <SettingsDialog
+          open={settingsOpen}
+          settings={settingsQuery.data ?? null}
+          onClose={() => setSettingsOpen(false)}
+          onSave={(apiKey, baseUrl) => {
+            saveCredentialsMutation.mutate({ apiKey, baseUrl });
+          }}
+          onSaveUI={(ui) => {
+            saveUIMutation.mutate(ui);
+          }}
+          onSaveAria2={(engineSettings) => {
+            saveAria2Mutation.mutate(engineSettings);
+          }}
+        />
+      )}
 
       {toast && (
         <div className={`toast toast-${toast.kind}`} role="status">
@@ -333,3 +450,4 @@ function App() {
 }
 
 export default App;
+

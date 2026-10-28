@@ -14,6 +14,7 @@ import { useEffect, useState } from 'react';
 
 import type { Settings } from '../../bindings';
 import { applyZoom, clampZoom, MAX_ZOOM, MIN_ZOOM, ZOOM_PRESETS } from '../../ui/zoom';
+import { Aria2SettingsPanel } from '../downloads/Aria2SettingsPanel';
 
 interface SettingsDialogProps {
   /** Whether the dialog is shown. */
@@ -26,20 +27,24 @@ interface SettingsDialogProps {
   onSave: (apiKey: string, baseUrl: string) => void;
   /** Stores the interface preferences. */
   onSaveUI: (ui: { zoom: number; theme: string }) => void;
+  /** Stores the sidecar settings. */
+  onSaveAria2?: (settings: Settings['aria2']) => void;
 }
 
 /**
  * The tabs of the settings dialog.
  */
-export type SettingsTab = 'connection' | 'zoom';
+export type SettingsTab = 'connection' | 'engine' | 'zoom';
 
 /**
  * The tabs, in the order they are shown.
  */
 export const SETTINGS_TABS: { value: SettingsTab; label: string }[] = [
   { value: 'connection', label: 'Connection' },
+  { value: 'engine', label: 'Engine' },
   { value: 'zoom', label: 'Zoom' },
 ];
+
 
 /**
  * Formats a zoom factor for display.
@@ -57,6 +62,7 @@ export function SettingsDialog({
   onClose,
   onSave,
   onSaveUI,
+  onSaveAria2,
 }: SettingsDialogProps) {
   const [tab, setTab] = useState<SettingsTab>('connection');
   const [apiKey, setApiKey] = useState('');
@@ -172,6 +178,13 @@ export function SettingsDialog({
                 />
               </div>
             </>
+          )}
+
+          {tab === 'engine' && (
+            <Aria2SettingsPanel
+              settings={settings?.aria2 ?? null}
+              onSave={(engineSettings) => onSaveAria2?.(engineSettings)}
+            />
           )}
 
           {tab === 'zoom' && (

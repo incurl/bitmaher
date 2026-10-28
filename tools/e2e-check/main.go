@@ -1,9 +1,16 @@
-// A live end-to-end check: submit a job against a stub runner and
-// confirm that the job is persisted, executed and served.
+// A live end-to-end check of BitMaher.
 //
 // It exercises the whole pipeline without a GUI: the PocketBase schema
-// is applied, the job is queued, the runner answers and the artifact is
-// stored and served by PocketBase's own file route.
+// is applied, the Aria2-Next sidecar is started as a real child
+// process, a download is added over JSON-RPC, the state is read back
+// and the record is persisted.
+//
+// The engine is a separate process, driven over a loopback socket. The
+// check proves that the boundary works: the sidecar is started, driven
+// and stopped, and the data ends up in the database.
+//
+// The check needs an aria2-next binary. The one on the PATH is used, and
+// the bundled one is used when there is none.
 package main
 
 import (
@@ -12,117 +19,164 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"time"
 
-	"github.com/incurl/valkyrie/internal/jobs"
-	valkyriepb "github.com/incurl/valkyrie/internal/pocketbase"
+	"github.com/incurl/bitmaher/internal/aria2"
+	"github.com/incurl/bitmaher/internal/downloads"
+	bitmaherpb "github.com/incurl/bitmaher/internal/pocketbase"
 )
 
 func main() {
-	dir, err := os.MkdirTemp("", "valkyrie-e2e")
+	dir, err := os.MkdirTemp("", "bitmaher-e2e")
 	if err != nil {
 		panic(err)
 	}
 	defer os.RemoveAll(dir)
 
-	svc := valkyriepb.NewService(dir)
+	svc := bitmaherpb.NewService(dir)
 	if err := svc.Bootstrap(); err != nil {
 		panic(err)
 	}
 	defer svc.Close()
 	fmt.Println("1. PocketBase bootstrapped, schema applied")
 
-	// A stub runner that stands in for a real backend.
-	var received jobs.Job
-	stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer stub.Close()
+	// The binary is the one on the PATH, or the bundled one.
+	binary, err := findBinary()
+	if err != nil {
+		fmt.Println("   FAIL:", err)
+		os.Exit(1)
+	}
+	fmt.Printf("   the engine binary is %s\n", binary)
 
-	manager := jobs.NewManager(svc.App(),
-		jobs.WithRunner(jobs.RunnerFunc(
-			func(ctx context.Context, job jobs.Job) (*jobs.Result, error) {
-				received = job
-				return &jobs.Result{
-					Payload: map[string]any{"echo": job.Prompt},
-				}, nil
-			},
-		)),
+	// The sidecar is started as a real child process.
+	secret, err := aria2.GenerateSecret()
+	if err != nil {
+		panic(err)
+	}
+
+	manager := aria2.NewManager(
+		aria2.WithBinary(binary),
+		aria2.WithDataDir(filepath.Join(dir, "aria2")),
+		aria2.WithSecret(secret),
 	)
 
-	job, err := manager.Submit(jobs.Request{
-		Title:  "a red bicycle",
-		Prompt: "a red bicycle",
-		Params: map[string]any{"style": "photo"},
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if _, err := manager.Start(ctx); err != nil {
+		fmt.Println("   FAIL: the sidecar did not start:", err)
+		os.Exit(1)
+	}
+	fmt.Printf("2. The sidecar started on port %d (%s %s)\n",
+		manager.Port(), manager.Version().Product, manager.Version().Version)
+
+	// The engine has to be aria2-next. The upstream aria2 is not what
+	// this application is built against.
+	if !manager.Version().IsAria2Next() {
+		fmt.Println("   FAIL: the engine is not aria2-next")
+		os.Exit(1)
+	}
+
+	// A file server, so that there is something to download.
+	payload := filepath.Join(dir, "payload.bin")
+	if err := os.WriteFile(payload, make([]byte, 512*1024), 0o600); err != nil {
+		panic(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, payload)
+	}))
+	defer server.Close()
+
+	// The service drives the engine and keeps the records.
+	store := downloads.NewStore(svc.App())
+	service := downloads.NewService(manager, store, nil)
+
+	job, err := service.Add(ctx, downloads.AddRequest{
+		Kind: "http",
+		URI:  server.URL + "/payload.bin",
+		Dir:  dir,
 	})
 	if err != nil {
-		panic(err)
+		fmt.Println("   FAIL: the download could not be added:", err)
+		os.Exit(1)
 	}
-	fmt.Printf("2. Job submitted: %s (status %s)\n", job.ID, job.Status)
+	fmt.Printf("3. The download was added: %s (gid %s)\n", job.Title, job.GID)
 
-	deadline := time.Now().Add(10 * time.Second)
+	// The state is read back and the record is updated.
+	deadline := time.Now().Add(15 * time.Second)
+	var last downloads.Job
 	for time.Now().Before(deadline) {
-		current, _ := manager.GetJob(job.ID)
-		if current.Status == "completed" || current.Status == "failed" {
-			job = current
+		if _, err := service.Sync(ctx); err != nil {
+			fmt.Println("   FAIL: the sync failed:", err)
+			os.Exit(1)
+		}
+
+		stored, err := store.Get(job.ID)
+		if err != nil {
+			fmt.Println("   FAIL: the record could not be read:", err)
+			os.Exit(1)
+		}
+		last = stored
+
+		if stored.Status == downloads.StatusComplete {
 			break
 		}
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(200 * time.Millisecond)
 	}
-	fmt.Printf("3. Job finished: status=%s artifacts=%d\n", job.Status, len(job.ArtifactIDs))
-	if job.Status != "completed" {
-		fmt.Println("   error:", job.ErrorMessage)
+
+	fmt.Printf("4. The record was updated: status=%s size=%d\n",
+		last.Status, last.TotalLength)
+	if last.Status != downloads.StatusComplete {
+		fmt.Println("   FAIL: the download did not finish:", last.Status, last.ErrorMessage)
+		os.Exit(1)
+	}
+	if last.TotalLength != 512*1024 {
+		fmt.Printf("   FAIL: the size is %d, want %d\n", last.TotalLength, 512*1024)
 		os.Exit(1)
 	}
 
-	// The runner must have received the prompt and the parameters.
-	if received.Prompt != "a red bicycle" {
-		fmt.Printf("   FAIL: the runner received %q\n", received.Prompt)
+	// The downloaded file has to be on disk, at the place that was
+	// asked for.
+	found := filepath.Join(dir, "payload.bin")
+	if _, err := os.Stat(found); err != nil {
+		fmt.Println("   FAIL: the file was not written:", err)
 		os.Exit(1)
 	}
-	if received.Params["style"] != "photo" {
-		fmt.Printf("   FAIL: the runner received the params %v\n", received.Params)
-		os.Exit(1)
-	}
-	fmt.Println("   the runner received the prompt and the parameters")
+	fmt.Println("   the file was written to the download folder")
 
-	// The result must have been stored.
-	if job.Result["echo"] != "a red bicycle" {
-		fmt.Printf("   FAIL: the stored result is %v\n", job.Result)
-		os.Exit(1)
-	}
-	fmt.Println("   the result was stored on the job")
-
-	// An artifact must be stored and served by PocketBase's native
-	// route.
-	png := []byte{
-		0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
-		0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
-		0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
-		0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53,
-		0xde, 0x00, 0x00, 0x00, 0x0c, 0x49, 0x44, 0x41,
-		0x54, 0x08, 0xd7, 0x63, 0xf8, 0xcf, 0xc0, 0x00,
-		0x00, 0x03, 0x01, 0x01, 0x00, 0x18, 0xdd, 0x8d,
-		0xb0, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e,
-		0x44, 0xae, 0x42, 0x60, 0x82,
-	}
-	artifact, err := manager.StoreArtifact(job.ID, jobs.ArtifactKindOutput, png, "sample.png", nil)
+	// The engine's own statistics have to answer.
+	stat, err := service.Stat(ctx)
 	if err != nil {
-		panic(err)
-	}
-	fmt.Printf("4. Artifact stored: %s (%s, %d bytes)\n", artifact.URL, artifact.Mime, artifact.Bytes)
-
-	handler, err := svc.Handler()
-	if err != nil {
-		panic(err)
-	}
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, artifact.URL, nil))
-	fmt.Printf("5. File route: GET %s -> %d (%d bytes, %s)\n",
-		artifact.URL, rec.Code, rec.Body.Len(), rec.Header().Get("Content-Type"))
-	if rec.Code != 200 || rec.Body.Len() == 0 {
+		fmt.Println("   FAIL: the statistics could not be read:", err)
 		os.Exit(1)
 	}
+	fmt.Printf("5. The engine answered: %d stopped, %d active\n", stat.NumStopped, stat.NumActive)
+
+	// The sidecar is stopped, and it must not outlive the check.
+	if err := manager.Stop(ctx); err != nil {
+		fmt.Println("   FAIL: the sidecar did not stop:", err)
+		os.Exit(1)
+	}
+	fmt.Println("6. The sidecar stopped")
 
 	fmt.Println("\nEND TO END: PASS")
+}
+
+// findBinary works out which aria2-next binary to use.
+//
+// The one on the PATH is preferred, because that is what a developer
+// has. The bundled one is the fallback.
+func findBinary() (string, error) {
+	if path, err := exec.LookPath("aria2-next"); err == nil {
+		return path, nil
+	}
+
+	cache := filepath.Join(os.TempDir(), "bitmaher-e2e-binary")
+	path, err := aria2.BundledBinaryPath(cache)
+	if err != nil {
+		return "", fmt.Errorf("no aria2-next binary was found: %w", err)
+	}
+	return path, nil
 }

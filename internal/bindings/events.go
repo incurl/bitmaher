@@ -1,8 +1,8 @@
 package bindings
 
 import (
-	"github.com/incurl/valkyrie/internal/console"
-	"github.com/incurl/valkyrie/internal/jobs"
+	"github.com/incurl/bitmaher/internal/console"
+	"github.com/incurl/bitmaher/internal/jobs"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 

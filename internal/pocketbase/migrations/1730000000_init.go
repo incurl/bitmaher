@@ -1,5 +1,5 @@
 // Package migrations contains the Go migrations that create and evolve
-// the Valkyrie PocketBase schema.
+// the BitMaher PocketBase schema.
 //
 // Migrations are registered with PocketBase's own migration list and are
 // applied by Service.Bootstrap, so PocketBase's own migration tooling
@@ -21,18 +21,18 @@ func registerMigration(file string, up func(core.App) error) {
 	core.AppMigrations.Register(up, func(core.App) error { return nil }, file)
 }
 
-// init registers the Valkyrie schema migration.
+// init registers the BitMaher schema migration.
 func init() {
 	registerMigration("1730000000_init.go", func(app core.App) error {
-		return createValkyrieSchema(app)
+		return createBaseSchema(app)
 	})
 }
 
-// createValkyrieSchema creates the Valkyrie collections.
+// createBaseSchema creates the base collections.
 //
 // The collections are created in dependency order so that relation
 // fields can reference an existing collection id.
-func createValkyrieSchema(app core.App) error {
+func createBaseSchema(app core.App) error {
 	// --- jobs -------------------------------------------------------
 	// The generic job table. The application decides what a job means;
 	// the scaffold only owns the lifecycle, the status and the

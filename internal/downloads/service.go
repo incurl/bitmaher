@@ -104,6 +104,17 @@ func (s *Service) Store() *Store {
 	return s.store
 }
 
+// Manager returns the manager of the sidecar.
+//
+// It is exposed so that the binding layer can report the state of the
+// engine without the service having to grow a method for it.
+func (s *Service) Manager() *aria2.Manager {
+	if s == nil {
+		return nil
+	}
+	return s.manager
+}
+
 // AddRequest is a request to start a download.
 type AddRequest struct {
 	// Kind is the kind of the download: "http", "torrent" or "magnet".
@@ -347,6 +358,31 @@ func (s *Service) Pause(ctx context.Context, id string) error {
 	}
 	s.info(fmt.Sprintf("the download %q was paused", job.Title))
 	return s.syncOne(ctx, client, job.GID)
+}
+
+// PauseAll pauses every running download.
+//
+// It is what the interface calls when the user pauses everything at
+// once. The downloads that cannot be paused are skipped, so that one
+// stubborn download does not stop the rest.
+func (s *Service) PauseAll(ctx context.Context) error {
+	client := s.manager.Client()
+	if client == nil {
+		return aria2.ErrNotRunning
+	}
+
+	active, err := client.Active(ctx)
+	if err != nil {
+		return err
+	}
+
+	for _, download := range active {
+		if err := client.Pause(ctx, download.GID); err != nil {
+			s.warn("the download could not be paused: " + err.Error())
+		}
+	}
+
+	return nil
 }
 
 // Resume resumes a paused download.

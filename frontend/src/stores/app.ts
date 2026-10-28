@@ -1,0 +1,443 @@
+/**
+ * @fileoverview Pinia store for global application state: engine, tasks, stats, and polling.
+ *
+ * Global stat (speed / task counts) arrives with every native pump snapshot
+ * (`tasks:snapshot`); the frontend never polls the engine.
+ */
+import { defineStore } from 'pinia'
+import { ref } from 'vue'
+import { invoke } from '@tauri-apps/api/core'
+import { logger } from '@shared/logger'
+import { detectExternalInputKind, detectKind, createBatchItem, reissueBatchItem } from '@shared/utils/batchHelpers'
+import { summarizeExternalInput } from '@shared/utils/externalInputDiagnostics'
+import { submitManualUris } from '@/composables/useAddTaskSubmit'
+import { usePreferenceStore } from '@/stores/preference'
+import { useTaskStore } from '@/stores/task'
+import type {
+  Aria2EngineOptions,
+  Aria2GlobalStat,
+  BrowserRequestHeader,
+  ExternalDownloadContext,
+  ExternalDownloadInput,
+  TauriUpdate,
+  BatchItem,
+} from '@shared/types'
+import type { AddTaskForm } from '@/composables/useAddTaskSubmit'
+import { getDefaultTaskProxyMode } from '@shared/utils/proxy'
+
+/** What the main window hands to the standalone add window. */
+export interface AddTaskForward {
+  items?: BatchItem[]
+  manual?: boolean
+}
+
+export interface DeepLinkHandlingResult {
+  received: number
+  queued: number
+  autoSubmitted: number
+  ignored: number
+}
+
+function normalizeFileUriPath(url: string): string {
+  const decodedPath = decodeURIComponent(url.replace(/^file:\/\//i, ''))
+  return /^\/[A-Za-z]:[\\/]/.test(decodedPath) ? decodedPath.slice(1) : decodedPath
+}
+
+export const useAppStore = defineStore('app', () => {
+  const systemTheme = ref('light')
+  const trayFocused = ref(false)
+  const aboutPanelVisible = ref(false)
+  const stat = ref({
+    downloadSpeed: 0,
+    uploadSpeed: 0,
+    numActive: 0,
+    numWaiting: 0,
+    numStopped: 0,
+    numStoppedTotal: 0,
+  })
+  const addTaskVisible = ref(false)
+  const pendingBatch = ref<BatchItem[]>([])
+  const addTaskOptions = ref<Aria2EngineOptions>({})
+  /** Referer from the most recent deep-link, pre-filled into AddTask form. */
+  const pendingReferer = ref('')
+  /** Cookie from the most recent deep-link, forwarded to aria2 as a Cookie header. */
+  const pendingCookie = ref('')
+  /** Output filename from extension's Content-Disposition extraction. */
+  const pendingFilename = ref('')
+  /** User-Agent captured by the browser extension for the most recent external input. */
+  const pendingUserAgent = ref('')
+  /** Browser request headers captured by the extension for the most recent external input. */
+  const pendingRequestHeaders = ref<BrowserRequestHeader[]>([])
+  const progress = ref(0)
+  const pendingUpdate = ref<TauriUpdate | null>(null)
+  const updateCheckRequestId = ref(0)
+  const externalInputSubmitting = ref(false)
+  let externalInputSubmitCount = 0
+  let externalInputErrorHandler: ((error: unknown) => void) | null = null
+  let externalInputStartHandler: ((taskNames: string[]) => void) | null = null
+  /** Set in the main window, which has no add dialog: new downloads go to the add window. */
+  let addTaskForwarder: ((batch: AddTaskForward) => void) | null = null
+
+  function clearPendingExternalMetadata() {
+    pendingReferer.value = ''
+    pendingCookie.value = ''
+    pendingFilename.value = ''
+    pendingUserAgent.value = ''
+    pendingRequestHeaders.value = []
+  }
+
+  function requestUpdateCheck() {
+    updateCheckRequestId.value += 1
+  }
+
+  function setPendingExternalMetadata(context: ExternalDownloadContext, filenameHint: string) {
+    pendingReferer.value = context.referer ?? ''
+    pendingCookie.value = context.cookie ?? ''
+    pendingUserAgent.value = context.userAgent ?? ''
+    pendingRequestHeaders.value = context.requestHeaders ?? []
+    pendingFilename.value = filenameHint
+  }
+
+  function setExternalInputErrorHandler(handler: ((error: unknown) => void) | null) {
+    externalInputErrorHandler = handler
+  }
+
+  function setExternalInputStartHandler(handler: ((taskNames: string[]) => void) | null) {
+    externalInputStartHandler = handler
+  }
+
+  function setAddTaskForwarder(forwarder: ((batch: AddTaskForward) => void) | null) {
+    addTaskForwarder = forwarder
+  }
+
+  /**
+   * Unified entry point for all external inputs.
+   * Accepts pre-built BatchItems (already resolved) and appends them to
+   * the pending batch, then opens the add-task dialog.
+   * @returns Number of duplicate items skipped.
+   */
+  function enqueueBatch(items: BatchItem[]): number {
+    if (items.length === 0) return 0
+    if (addTaskForwarder) {
+      addTaskForwarder({ items })
+      return 0
+    }
+    return enqueueLocal(items)
+  }
+
+  function enqueueLocal(items: BatchItem[]): number {
+    // Deduplicate against existing batch AND within incoming items
+    const seen = new Set(pendingBatch.value.map((i) => i.source))
+    const unique: BatchItem[] = []
+    for (const item of items) {
+      if (!seen.has(item.source)) {
+        seen.add(item.source)
+        unique.push(item)
+      }
+    }
+    const skipped = items.length - unique.length
+    if (unique.length > 0) {
+      pendingBatch.value = [...pendingBatch.value, ...unique]
+    }
+    addTaskVisible.value = true
+    return skipped
+  }
+
+  /** Opens an empty add-task dialog for manual URI entry. */
+  function showAddTaskDialog() {
+    if (addTaskForwarder) {
+      addTaskForwarder({ manual: true })
+      return
+    }
+    clearPendingExternalMetadata()
+    addTaskVisible.value = true
+  }
+
+  /**
+   * Takes items forwarded by the main window, restoring the browser context
+   * the dialog pre-fills from.
+   * @returns Number of duplicate items skipped.
+   */
+  function enqueueForwardedItems(items: BatchItem[]): number {
+    const context = [...items].reverse().find((item) => item.browserContext)?.browserContext
+    if (context) setPendingExternalMetadata(context, context.filename?.trim() ?? '')
+    return enqueueLocal(items.map(reissueBatchItem))
+  }
+
+  function hideAddTaskDialog() {
+    addTaskVisible.value = false
+    pendingBatch.value = []
+    clearPendingExternalMetadata()
+  }
+
+  function updateAddTaskOptions(options: Aria2EngineOptions = {}) {
+    addTaskOptions.value = { ...options }
+  }
+
+  /** Applies the statistics of a pump snapshot. */
+  function applyStat(payload: Aria2GlobalStat) {
+    stat.value = {
+      downloadSpeed: payload.downloadSpeed,
+      uploadSpeed: payload.uploadSpeed,
+      numActive: payload.numActive,
+      numWaiting: payload.numWaiting,
+      numStopped: payload.numStopped,
+      numStoppedTotal: payload.numStoppedTotal,
+    }
+  }
+
+  /**
+   * Normalizes deep-link / argv URLs into BatchItems and enqueues them.
+   * All items land in the same batch for user review before submission.
+   */
+  function handleDeepLinkUrls(urls: string[]): DeepLinkHandlingResult {
+    const result: DeepLinkHandlingResult = {
+      received: urls?.length ?? 0,
+      queued: 0,
+      autoSubmitted: 0,
+      ignored: 0,
+    }
+    if (!urls || urls.length === 0) return result
+
+    const items: BatchItem[] = []
+    const FILE_EXTS = ['.torrent']
+
+    for (const url of urls) {
+      const lower = url.toLowerCase()
+      // The private scheme activates the app; downloads use the authenticated HTTP API.
+      if (lower.startsWith('rayburst:')) {
+        result.ignored += 1
+        continue
+      }
+
+      // Determine if this is a local file reference (file:// protocol or raw path)
+      const isFileUri = lower.startsWith('file://')
+      const isRemoteUri =
+        lower.startsWith('http://') ||
+        lower.startsWith('https://') ||
+        lower.startsWith('sftp://') ||
+        lower.startsWith('magnet:') ||
+        lower.startsWith('ed2k://') ||
+        lower.startsWith('thunder://')
+      const isLocalPath = !isRemoteUri && !isFileUri && (!/^[a-z][a-z0-9+.-]*:/i.test(url) || /^[a-z]:[\\/]/i.test(url))
+
+      // Only treat as a file-based batch item if it's a LOCAL path or file:// URI
+      const hasFileExt = FILE_EXTS.some((ext) => lower.endsWith(ext))
+      if ((isLocalPath || isFileUri) && hasFileExt) {
+        const filePath = isFileUri ? normalizeFileUriPath(url) : url
+        const kind = detectKind(filePath)
+        items.push(createBatchItem(kind, filePath))
+      } else if (lower.startsWith('magnet:')) {
+        items.push(createBatchItem('uri', url))
+      } else if (lower.startsWith('ed2k://')) {
+        items.push(createBatchItem('uri', url))
+      } else if (lower.startsWith('thunder://')) {
+        items.push(createBatchItem('uri', url))
+      } else if (isRemoteUri) {
+        const kind = detectExternalInputKind(url)
+        items.push(createBatchItem(kind, url))
+      }
+    }
+
+    if (items.length > 0) {
+      const skipped = enqueueBatch(items)
+      result.queued += items.length - skipped
+    }
+
+    return result
+  }
+
+  async function handleExternalInputs(inputs: ExternalDownloadInput[]): Promise<DeepLinkHandlingResult> {
+    const result: DeepLinkHandlingResult = {
+      received: inputs?.length ?? 0,
+      queued: 0,
+      autoSubmitted: 0,
+      ignored: 0,
+    }
+    if (!inputs || inputs.length === 0) return result
+
+    const items: BatchItem[] = []
+    for (const input of inputs) {
+      if (!input.url) {
+        result.ignored += 1
+        continue
+      }
+      const routed = routeExternalDownloadInput(input, items)
+      result.autoSubmitted += routed.autoSubmitted
+      result.ignored += routed.ignored
+    }
+
+    for (const item of items) {
+      const existing = pendingBatch.value.find((pending) => pending.source === item.source)
+      if (existing) {
+        const id = item.browserContext?.requestId
+        // A replay keeps the original intent; a separate duplicate is dismissed.
+        if (id && id !== existing.browserContext?.requestId) {
+          await invoke('cancel_download_request', { id })
+        }
+        result.ignored += 1
+      } else {
+        result.queued += 1 - enqueueBatch([item])
+      }
+    }
+
+    return result
+  }
+
+  function buildExternalContext(input: ExternalDownloadInput): ExternalDownloadContext {
+    return {
+      referer: input.referer ?? '',
+      cookie: input.cookie ?? '',
+      userAgent: input.userAgent ?? '',
+      requestHeaders: input.requestHeaders ?? [],
+      url: input.url,
+      finalUrl: input.finalUrl,
+      traceId: input.traceId,
+      filename: input.filename,
+      filenameSource: input.filenameSource,
+      requestId: input.requestId,
+      size: input.size,
+    }
+  }
+
+  function routeExternalDownloadInput(
+    input: ExternalDownloadInput,
+    items: BatchItem[],
+  ): Pick<DeepLinkHandlingResult, 'autoSubmitted' | 'ignored'> {
+    const downloadUrl = input.url
+    const preferenceStore = usePreferenceStore()
+    const detected = detectExternalInputKind(downloadUrl)
+    // A saved .torrent is an ordinary file; the engine does not follow it (#50).
+    const keepTorrentFile =
+      preferenceStore.config.extensionTorrentAction === 'save' || !preferenceStore.config.bittorrentEnabled
+    const kind = detected === 'torrent' && keepTorrentFile ? 'uri' : detected
+    const resolvedHint = input.filename?.trim() ?? ''
+    const context = buildExternalContext(input)
+
+    const autoSubmit = preferenceStore.config.extensionDownloadBehavior !== 'confirm'
+    logger.debug('ExternalInput.new', 'external_input_received', {
+      url: summarizeExternalInput(downloadUrl),
+      kind,
+      input_source: input.source || 'unknown',
+      trace_id: context.traceId ?? 'none',
+      has_user_agent: context.userAgent ? 'true' : 'false',
+      has_cookie: context.cookie ? 'true' : 'false',
+      header_count: context.requestHeaders?.length ?? 0,
+      filename: input.filename ? 'present' : 'none',
+      resolved_filename: resolvedHint ? 'present' : 'none',
+      auto_submit: autoSubmit,
+    })
+
+    if (autoSubmit && kind === 'uri' && !input.requestId) {
+      void autoSubmitExtensionUrl(downloadUrl, context, resolvedHint)
+      return { autoSubmitted: 1, ignored: 0 }
+    }
+
+    setPendingExternalMetadata(context, resolvedHint)
+    const item = createBatchItem(kind, downloadUrl)
+    item.browserContext = context
+    if (resolvedHint) item.displayName = resolvedHint
+    items.push(item)
+    return { autoSubmitted: 0, ignored: 0 }
+  }
+
+  /**
+   * Auto-submits a single extension URL using the user's default settings.
+   * Equivalent to opening AddTask and clicking Submit without any changes.
+   */
+  async function autoSubmitExtensionUrl(
+    url: string,
+    context: ExternalDownloadContext,
+    filenameHint: string,
+  ): Promise<void> {
+    const preferenceStore = usePreferenceStore()
+    const taskStore = useTaskStore()
+
+    const form = buildExtensionSubmitForm(url, preferenceStore, context)
+    externalInputSubmitCount += 1
+    externalInputSubmitting.value = true
+    try {
+      const result = await submitManualUris(form, taskStore, {
+        enabled: preferenceStore.config.fileCategoryEnabled,
+        categories: preferenceStore.config.fileCategories,
+      })
+      const taskNames = result.submittedTaskNames.length > 0 ? result.submittedTaskNames : [filenameHint || url]
+      externalInputStartHandler?.(taskNames)
+      preferenceStore.recordHistoryDirectory(form.dir || preferenceStore.config.dir)
+      logger.debug('autoSubmit', 'external_input_submitted', {
+        trace_id: context.traceId ?? 'none',
+        url: summarizeExternalInput(url),
+        result: 'submitted',
+      })
+    } catch (e) {
+      logger.error('autoSubmit', e)
+      externalInputErrorHandler?.(e)
+    } finally {
+      externalInputSubmitCount = Math.max(0, externalInputSubmitCount - 1)
+      externalInputSubmitting.value = externalInputSubmitCount > 0
+    }
+  }
+
+  function buildExtensionSubmitForm(
+    url: string,
+    preferenceStore: ReturnType<typeof usePreferenceStore>,
+    context: ExternalDownloadContext,
+  ): AddTaskForm {
+    return {
+      uris: url,
+      out: '',
+      dir: preferenceStore.config.dir,
+      streamMaxConnections: preferenceStore.config.streamMaxConnections,
+      userAgent: context.userAgent || preferenceStore.config.userAgent || '',
+      defaultUserAgent: preferenceStore.config.userAgent || '',
+      userAgentProfiles: preferenceStore.config.userAgentProfiles,
+      userAgentRules: preferenceStore.config.userAgentRules,
+      authorization: '',
+      httpAuthUsername: '',
+      httpAuthPassword: '',
+      saveHttpAuth: true,
+      referer: context.referer ?? '',
+      cookie: context.cookie ?? '',
+      proxyMode: getDefaultTaskProxyMode(preferenceStore.config.proxy),
+      customProxy: '',
+      customProxyUsername: '',
+      customProxyPassword: '',
+      appProxy: preferenceStore.config.proxy,
+      requestHeaders: context.requestHeaders ?? [],
+      uriRequestContexts: {
+        [url]: context,
+      },
+    }
+  }
+
+  return {
+    systemTheme,
+    trayFocused,
+    aboutPanelVisible,
+    stat,
+    addTaskVisible,
+    pendingBatch,
+    addTaskOptions,
+    pendingReferer,
+    pendingCookie,
+    pendingUserAgent,
+    pendingRequestHeaders,
+    progress,
+    pendingUpdate,
+    updateCheckRequestId,
+    requestUpdateCheck,
+    enqueueBatch,
+    enqueueForwardedItems,
+    showAddTaskDialog,
+    setAddTaskForwarder,
+    hideAddTaskDialog,
+    updateAddTaskOptions,
+    applyStat,
+    handleDeepLinkUrls,
+    handleExternalInputs,
+    setExternalInputErrorHandler,
+    setExternalInputStartHandler,
+    pendingFilename,
+    externalInputSubmitting,
+  }
+})

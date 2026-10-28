@@ -3,6 +3,8 @@
 bin
 frontend/dist
 frontend/node_modules
+# The pnpm store lives inside node_modules, but the metadata does not.
+.pnpm-store
 build/linux/appimage/build
 build/windows/nsis/MicrosoftEdgeWebview2Setup.exe
 

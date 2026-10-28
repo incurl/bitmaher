@@ -1,7 +1,7 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "types": ["vite/client", "vitest/globals", "node"]
+    "types": ["vite/client", "node", "vitest/globals"]
   },
-  "include": ["src", "bindings", "vite.config.ts"]
+  "include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.vue", "src/**/*.test.ts"]
 }

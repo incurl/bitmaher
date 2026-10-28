@@ -1,43 +1,44 @@
 {
   "compilerOptions": {
-    "target": "ES2022",
+    "target": "ES2021",
     "useDefineForClassFields": true,
-    "lib": [
-      "ES2022",
-      "DOM",
-      "DOM.Iterable"
-    ],
     "module": "ESNext",
+    "lib": ["ES2021", "DOM", "DOM.Iterable"],
     "skipLibCheck": true,
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
-    "resolveJsonModule": true,
     "isolatedModules": true,
+    "moduleDetection": "force",
     "noEmit": true,
-    "jsx": "react-jsx",
+    "jsx": "preserve",
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
-    "types": [
-      "vite/client",
-      "vitest/globals"
-    ],
-    "baseUrl": ".",
-    "paths": {
-      "@app/*": [
-        "src/app/*"
-      ]
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "types": ["vite/client", "node"],
+        "paths": {
+      "@/*": ["./src/*"],
+      "@shared/*": ["./src/shared/*"],
+      "@tauri-apps/api/core": ["./src/platform/core.ts"],
+      "@tauri-apps/api/event": ["./src/platform/event.ts"],
+      "@tauri-apps/api/window": ["./src/platform/window.ts"],
+      "@tauri-apps/api/webviewWindow": ["./src/platform/window.ts"],
+      "@tauri-apps/api/webview": ["./src/platform/webview.ts"],
+      "@tauri-apps/api/path": ["./src/platform/path.ts"],
+      "@tauri-apps/api/app": ["./src/platform/app.ts"],
+      "@tauri-apps/plugin-dialog": ["./src/platform/dialog.ts"],
+      "@tauri-apps/plugin-opener": ["./src/platform/opener.ts"],
+      "@tauri-apps/plugin-process": ["./src/platform/process.ts"],
+      "@tauri-apps/plugin-store": ["./src/platform/store.ts"],
+      "@tauri-apps/plugin-os": ["./src/platform/os.ts"],
+      "@tauri-apps/plugin-fs": ["./src/platform/fs.ts"],
+      "@tauri-apps/plugin-clipboard-manager": ["./src/platform/clipboard.ts"],
+      "@tauri-apps/plugin-log": ["./src/platform/logger.ts"],
+      "tauri-plugin-locale-api": ["./src/platform/locale.ts"]
     }
   },
-  "include": [
-    "src",
-    "bindings"
-  ],
-  "exclude": [
-    "src/**/*.test.ts",
-    "src/**/*.test.tsx",
-    "dist",
-    "node_modules"
-  ]
+  "include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.vue"],
+  "exclude": ["src/bindings/**"]
 }

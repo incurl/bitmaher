@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 512 512" role="img" aria-labelledby="bitmaher-title">
+  <title id="bitmaher-title">BitMaher</title>
+  <defs>
+    <linearGradient id="bitmaher-arrow" x1="80%" y1="0%" x2="20%" y2="100%">
+      <stop offset="0%" stop-color="#4FA3F7" />
+      <stop offset="50%" stop-color="#2E7BE8" />
+      <stop offset="100%" stop-color="#1B5FC4" />
+    </linearGradient>
+    <linearGradient id="bitmaher-tray" x1="100%" y1="10%" x2="0%" y2="85%">
+      <stop offset="0%" stop-color="#3D8BEF" />
+      <stop offset="100%" stop-color="#1E63C9" />
+    </linearGradient>
+  </defs>
+
+  <!-- The arrow: the download. -->
+  <path
+    d="M256 96 L256 288 M256 288 L180 212 M256 288 L332 212"
+    fill="none"
+    stroke="url(#bitmaher-arrow)"
+    stroke-width="56"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+
+  <!-- The tray: the file it lands in. -->
+  <path
+    d="M116 320 L116 400 L396 400 L396 320"
+    fill="none"
+    stroke="url(#bitmaher-tray)"
+    stroke-width="56"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+</svg>

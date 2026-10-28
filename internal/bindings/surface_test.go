@@ -15,16 +15,25 @@ import (
 // mistake this test catches.
 var expectedMethods = []string{
 	"AddDownload",
+	"AppName",
+	"AppVersion",
 	"ClearConsoleEntries",
 	"DeletePreset",
+	"DiskFreeSpace",
 	"DownloadFiles",
 	"DownloadStat",
+	"EngineState",
 	"GetSettings",
 	"ListConsoleEntries",
 	"ListDownloads",
 	"ListPresets",
+	"OpenExternalURL",
+	"PathExists",
 	"PauseDownload",
+	"PauseDownloadAll",
+	"PlatformPaths",
 	"PurgeDownloads",
+	"ReadLocalFile",
 	"RemoveDownload",
 	"ResumeDownload",
 	"SaveAria2",
@@ -32,7 +41,18 @@ var expectedMethods = []string{
 	"SavePreset",
 	"SaveUI",
 	"SelectDownloadFiles",
+	"ShowInFolder",
+	"Shutdown",
+	"StoreClear",
+	"StoreDelete",
+	"StoreKeys",
+	"StoreRead",
+	"StoreReadValue",
+	"StoreWrite",
 	"SyncDownloads",
+	"UnsupportedCommand",
+	"WriteLocalFile",
+	"WriteLog",
 }
 
 // TestAppServiceExposesExactlyTheIntendedMethods pins the bound surface.
@@ -80,6 +100,8 @@ func TestNoBoundMethodReturnsAnInternalType(t *testing.T) {
 		"bindings.SettingsView": true,
 		"bindings.DownloadView": true,
 		"bindings.FileView":     true,
+		"bindings.Paths":        true,
+		"bindings.EngineState":  true,
 		"jobs.Artifact":         true,
 		"jobs.Job":              true,
 		"jobs.Request":          true,
@@ -88,6 +110,14 @@ func TestNoBoundMethodReturnsAnInternalType(t *testing.T) {
 		"pocketbase.Aria2":      true,
 		"downloads.Preset":      true,
 		"aria2.GlobalStat":      true,
+
+		// The plain types serialise to themselves, so the frontend can
+		// read them. The platform commands answer with them: a path, a
+		// version, a number of bytes.
+		"string":                  true,
+		"bool":                    true,
+		"int64":                   true,
+		"map[string]interface {}": true,
 	}
 
 	for i := 0; i < typ.NumMethod(); i++ {

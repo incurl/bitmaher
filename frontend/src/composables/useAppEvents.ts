@@ -1,0 +1,662 @@
+/**
+ * @fileoverview Composable encapsulating IPC event listeners for MainLayout.
+ *
+ * Extracted from MainLayout.vue to reduce component script size.
+ * Contains handlers for: menu-event, tray-menu-action, deep-link-open,
+ * single-instance-triggered, port changes, and drag-drop.
+ */
+import { useTaskSelectionStore } from '@/stores/taskSelection'
+import { listen } from '@tauri-apps/api/event'
+import { updateTaskFileStates, type TaskFileState } from '@/composables/useTaskFileMissing'
+import { listenForTorrentDrops } from '@/composables/useTorrentDrop'
+import { getCurrentWindow } from '@tauri-apps/api/window'
+import { open as openDialog } from '@tauri-apps/plugin-dialog'
+import { openUrl } from '@tauri-apps/plugin-opener'
+import { useRouter, useRoute } from 'vue-router'
+import { logger } from '@shared/logger'
+import { isEngineReady } from '@/api/aria2'
+import { detectKind, createBatchItem } from '@shared/utils/batchHelpers'
+import { createExternalInputTraceId, summarizeExternalInputBatch } from '@shared/utils/externalInputDiagnostics'
+import { getErrorMessage } from '@shared/utils/errorMessage'
+import type { ExternalDownloadInput } from '@shared/types'
+import { handleTaskStart } from '@/composables/useTaskNotifyHandlers'
+import { onUnmounted } from 'vue'
+
+interface DeepLinkHandlingResult {
+  received: number
+  queued: number
+  autoSubmitted: number
+  ignored: number
+}
+
+interface PendingDeepLinksPayload {
+  urls: string[]
+  silent: boolean
+}
+
+type DeepLinkEventPayload = string[] | PendingDeepLinksPayload
+
+interface PendingExternalInputsPayload {
+  inputs: ExternalDownloadInput[]
+  silent: boolean
+}
+
+type PendingFrontendActionChannel = 'menu-event' | 'tray-menu-action'
+
+interface PendingFrontendAction {
+  channel: PendingFrontendActionChannel
+  action: string
+}
+
+interface AppEventsDeps {
+  t: (key: string, params?: Record<string, unknown>) => string
+  appStore: {
+    showAddTaskDialog: () => void
+    enqueueBatch: (items: ReturnType<typeof createBatchItem>[]) => number
+    handleDeepLinkUrls: (urls: string[]) => DeepLinkHandlingResult | void
+    handleExternalInputs: (inputs: ExternalDownloadInput[]) => Promise<DeepLinkHandlingResult | void>
+    setExternalInputErrorHandler?: (handler: ((error: unknown) => void) | null) => void
+    setExternalInputStartHandler?: (handler: ((taskNames: string[]) => void) | null) => void
+    pendingBatch: unknown[]
+    externalInputSubmitting: boolean
+  }
+  taskStore: {
+    hasPausedTasks: () => Promise<boolean>
+    hasActiveTasks: () => Promise<boolean>
+    resumeAllTask: () => Promise<unknown>
+    pauseAllTask: () => Promise<unknown>
+    fetchList: () => Promise<unknown>
+  }
+  preferenceStore: {
+    pendingChanges: boolean
+    saveBeforeLeave: (() => Promise<void>) | null
+    config: {
+      rpcListenPort?: string | number
+      rpcSecret: string
+      extensionApiPort?: number
+      listenPort?: number
+      ed2kListenPort?: number
+      ed2kUdpListenPort?: number
+      lightweightMode?: boolean
+    }
+    updatePreference?: (cfg: Record<string, unknown>) => void
+  }
+  message: {
+    success: (msg: string) => void
+    error: (msg: string, opts?: Record<string, unknown>) => void
+    warning: (msg: string) => void
+    info: (msg: string, opts?: Record<string, unknown>) => void
+  }
+  navDialog: ReturnType<typeof import('naive-ui').useDialog>
+  handleExitConfirm: () => Promise<void>
+  onAbout: () => void
+}
+
+interface AppEventsReturn {
+  setupListeners: () => Promise<{
+    unlistenDragDrop: (() => void) | null
+    unlistenMenuEvent: (() => void) | null
+    unlistenTrayMenu: (() => void) | null
+    unlistenDeepLink: (() => void) | null
+    unlistenExternalInput: (() => void) | null
+    unlistenSingleInstance: (() => void) | null
+    teardown: () => void
+  }>
+}
+
+export function useAppEvents(deps: AppEventsDeps): AppEventsReturn {
+  const { t, appStore, taskStore, preferenceStore, message, navDialog, handleExitConfirm } = deps
+
+  const router = useRouter()
+  const route = useRoute()
+  const cleanupFns: Array<() => void> = []
+  let silentCleanupTimer: ReturnType<typeof setTimeout> | null = null
+
+  function registerCleanup(cleanup: (() => void) | null | undefined): () => void {
+    let active = true
+    const once = () => {
+      if (!active || !cleanup) return
+      active = false
+      cleanup()
+    }
+    cleanupFns.push(once)
+    return once
+  }
+
+  function teardown() {
+    if (silentCleanupTimer) {
+      clearTimeout(silentCleanupTimer)
+      silentCleanupTimer = null
+    }
+    const pending = cleanupFns.splice(0)
+    for (const cleanup of pending.reverse()) {
+      cleanup()
+    }
+  }
+
+  onUnmounted(teardown)
+
+  function setupExternalInputHandlers() {
+    appStore.setExternalInputErrorHandler?.((error) => {
+      message.error(
+        getErrorMessage(error, {
+          fallback: t('task.error-unknown'),
+          labels: { Aria2: t('task.error-aria2-next') },
+        }),
+        { closable: true },
+      )
+    })
+    registerCleanup(() => appStore.setExternalInputErrorHandler?.(null))
+
+    appStore.setExternalInputStartHandler?.((taskNames) => {
+      handleTaskStart(taskNames, {
+        messageInfo: message.info,
+        t,
+      })
+    })
+    registerCleanup(() => appStore.setExternalInputStartHandler?.(null))
+  }
+
+  setupExternalInputHandlers()
+
+  async function runExternalInputWindowStage(
+    traceId: string,
+    stage: 'unminimize' | 'show' | 'setFocus',
+    operation: () => Promise<void>,
+  ) {
+    try {
+      await operation()
+      logger.debug('ExternalInput', 'window_stage_completed', { trace_id: traceId, stage, result: 'ok' })
+    } catch (error) {
+      const reason = getErrorMessage(error)
+      logger.warn('ExternalInput', 'window_stage_failed', { trace_id: traceId, stage, result: 'failed', reason })
+    }
+  }
+
+  // ─── Port state watchers ──────────────────────────────────────────
+  async function setupPortWatchers() {
+    registerCleanup(
+      await listen<Record<string, TaskFileState>>('task-files:changed', (event) => updateTaskFileStates(event.payload)),
+    )
+    registerCleanup(
+      await listen<{ port: number }>('extension-api:bind-failed', (event) => {
+        const params = { label: t('preferences.extension-api-port'), port: event.payload.port }
+        message.error(t('preferences.port-auto-switch-bind-failed', params), { closable: true })
+      }),
+    )
+  }
+
+  // ─── Navigation guard ─────────────────────────────────────────────
+  function setupNavGuard() {
+    return registerCleanup(
+      router.beforeEach((to, from) => {
+        const leavingPrefs = from.path.startsWith('/preference') && !to.path.startsWith('/preference')
+        const switchingPrefsTab =
+          from.path.startsWith('/preference') && to.path.startsWith('/preference') && from.path !== to.path
+        if ((leavingPrefs || switchingPrefsTab) && preferenceStore.pendingChanges) {
+          return new Promise<boolean>((resolve) => {
+            navDialog.warning({
+              title: t('preferences.not-saved'),
+              content: t('preferences.not-saved-confirm'),
+              positiveText: t('preferences.save-and-leave'),
+              negativeText: t('preferences.leave-without-saving'),
+              onPositiveClick: async () => {
+                try {
+                  if (preferenceStore.saveBeforeLeave) {
+                    await preferenceStore.saveBeforeLeave()
+                  }
+                  preferenceStore.pendingChanges = false
+                  resolve(true)
+                } catch (e) {
+                  logger.error('NavGuard', e)
+                  resolve(false)
+                }
+              },
+              onNegativeClick: () => {
+                preferenceStore.pendingChanges = false
+                resolve(true)
+              },
+              onClose: () => {
+                resolve(false)
+              },
+              onMaskClick: () => {
+                resolve(false)
+              },
+            })
+          })
+        }
+        return true
+      }),
+    )
+  }
+
+  // ─── Native menu events (macOS menu bar) ──────────────────────────
+  async function setupMenuListener() {
+    return registerCleanup(
+      await listen<string>('menu-event', async (event) => {
+        await handleMenuAction(event.payload)
+      }),
+    )
+  }
+
+  // ─── Tray menu actions (system-tray right-click menu) ──────────────
+  async function setupTrayListener() {
+    return registerCleanup(
+      await listen<string>('tray-menu-action', async (event) => {
+        await handleTrayAction(event.payload)
+      }),
+    )
+  }
+
+  async function surfaceMainWindow() {
+    const mainWindow = getCurrentWindow()
+    await mainWindow.unminimize()
+    await mainWindow.show()
+    await mainWindow.setFocus()
+  }
+
+  async function handleMenuAction(action: string) {
+    switch (action) {
+      case 'about':
+        deps.onAbout()
+        break
+      case 'new-task':
+        appStore.showAddTaskDialog()
+        break
+      case 'open-torrent': {
+        const selected = await openDialog({
+          multiple: true,
+          filters: [{ name: 'Torrent', extensions: ['torrent'] }],
+        })
+        if (typeof selected === 'string') {
+          const skipped = appStore.enqueueBatch([createBatchItem(detectKind(selected), selected)])
+          if (skipped > 0) message.warning(t('task.duplicate-task'))
+        } else if (Array.isArray(selected) && selected.length > 0) {
+          const skipped = appStore.enqueueBatch(selected.map((p) => createBatchItem(detectKind(p), p)))
+          if (skipped > 0) message.warning(t('task.duplicate-task'))
+        }
+        break
+      }
+      case 'preferences':
+        router.push('/preference').catch(() => {
+          /* duplicate navigation */
+        })
+        break
+      case 'resume-all':
+        if (!(await taskStore.hasPausedTasks())) break
+        taskStore.resumeAllTask().catch((e) => logger.error('TrayMenu', e))
+        break
+      case 'pause-all':
+        if (!(await taskStore.hasActiveTasks())) break
+        taskStore.pauseAllTask().catch((e) => logger.error('TrayMenu', e))
+        break
+      case 'release-notes':
+        openUrl('https://github.com/AnInsomniacy/rayburst/releases').catch((e) => logger.error('TrayMenu', e))
+        break
+      case 'report-issue':
+        openUrl('https://github.com/AnInsomniacy/rayburst/issues').catch((e) => logger.error('TrayMenu', e))
+        break
+    }
+  }
+
+  async function handleTrayAction(action: string) {
+    switch (action) {
+      case 'show-downloads':
+        await router.push('/task/all')
+        break
+      case 'show':
+        await surfaceMainWindow()
+        break
+      case 'new-task':
+        appStore.showAddTaskDialog()
+        break
+      case 'resume-all':
+        await surfaceMainWindow()
+        if (!(await taskStore.hasPausedTasks())) {
+          message.info(t('task.no-paused-tasks'))
+          break
+        }
+        if (!isEngineReady()) {
+          message.warning(t('app.engine-not-ready'))
+        } else {
+          navDialog.warning({
+            title: t('task.resume-all-task'),
+            content: t('task.resume-all-task-confirm') || 'Resume all tasks?',
+            positiveText: t('app.yes'),
+            negativeText: t('app.no'),
+            onPositiveClick: () => {
+              taskStore
+                .resumeAllTask()
+                .then(() => message.success(t('task.resume-all-task-success')))
+                .catch(() => message.error(t('task.resume-all-task-fail')))
+            },
+          })
+        }
+        break
+      case 'pause-all': {
+        await surfaceMainWindow()
+        if (!(await taskStore.hasActiveTasks())) {
+          message.info(t('task.no-active-tasks'))
+          break
+        }
+        if (!isEngineReady()) {
+          message.warning(t('app.engine-not-ready'))
+          break
+        }
+        const d = navDialog.warning({
+          title: t('task.pause-all-task'),
+          content: t('task.pause-all-task-confirm') || 'Pause all tasks?',
+          positiveText: t('app.yes'),
+          negativeText: t('app.no'),
+          onPositiveClick: () => {
+            d.loading = true
+            d.negativeButtonProps = { disabled: true }
+            d.closable = false
+            d.maskClosable = false
+            taskStore
+              .pauseAllTask()
+              .then(async () => {
+                await new Promise((r) => setTimeout(r, 500))
+                await taskStore.fetchList()
+                message.success(t('task.pause-all-task-success'))
+                d.destroy()
+              })
+              .catch(() => {
+                message.error(t('task.pause-all-task-fail'))
+                d.destroy()
+              })
+            return false
+          },
+        })
+        break
+      }
+      case 'quit':
+        await handleExitConfirm()
+        break
+    }
+  }
+
+  // ─── Drag & drop .torrent files ──────────────────────────────────
+  async function setupDragDropListener() {
+    return registerCleanup(
+      await listenForTorrentDrops({ enqueue: (items) => appStore.enqueueBatch(items), warn: message.warning, t }),
+    )
+  }
+
+  // ─── Deep-link and single-instance listeners ─────────────────────
+
+  /**
+   * Process incoming deep-link URLs: surface window, navigate to downloads
+   * page if the payload contains a new-task URL, then delegate to the app
+   * store's handleDeepLinkUrls for actual download routing.
+   *
+   * Shared by the live `deep-link-open` listener and the pending-URL
+   * consumption path (lightweight mode window recreation).
+   */
+  async function scheduleSilentLightweightCleanup(traceId: string) {
+    if (silentCleanupTimer) clearTimeout(silentCleanupTimer)
+    silentCleanupTimer = setTimeout(() => {
+      silentCleanupTimer = null
+      void (async () => {
+        if (!preferenceStore.config.lightweightMode) return
+        if (appStore.externalInputSubmitting) return
+        if (appStore.pendingBatch.length > 0) return
+        if (useTaskSelectionStore().pending.length > 0) return
+        const mainWindow = getCurrentWindow()
+        try {
+          if (await mainWindow.isVisible()) return
+          const { invoke } = await import('@tauri-apps/api/core')
+          await invoke('minimize_to_tray')
+          logger.info('ExternalInput', 'silent_cleanup_completed', {
+            trace_id: traceId,
+            stage: 'silent-cleanup',
+            result: 'ok',
+          })
+        } catch (error) {
+          const reason = getErrorMessage(error)
+          logger.debug('ExternalInput', 'silent_cleanup_skipped', {
+            trace_id: traceId,
+            stage: 'silent-cleanup',
+            result: 'skipped',
+            reason,
+          })
+        }
+      })()
+    }, 7000)
+  }
+
+  async function processIncomingDeepLinks(urls: string[], options: { silent?: boolean } = {}) {
+    const traceId = createExternalInputTraceId()
+    const silent = options.silent === true
+    logger.info('ExternalInput', 'deep_links_received', {
+      trace_id: traceId,
+      stage: 'received',
+      route: route.path,
+      silent,
+      ...summarizeExternalInputBatch(urls),
+    })
+    if (!silent) {
+      const mainWindow = getCurrentWindow()
+      await runExternalInputWindowStage(traceId, 'unminimize', () => mainWindow.unminimize())
+      await runExternalInputWindowStage(traceId, 'show', () => mainWindow.show())
+      await runExternalInputWindowStage(traceId, 'setFocus', () => mainWindow.setFocus())
+    }
+
+    logger.debug('ExternalInput', 'download_routing_started', {
+      trace_id: traceId,
+      stage: 'route-download',
+      result: 'start',
+    })
+    try {
+      const handlingResult = appStore.handleDeepLinkUrls(urls)
+      logger.info('ExternalInput', 'download_routing_completed', {
+        trace_id: traceId,
+        stage: 'route-download',
+        result: 'ok',
+        received: handlingResult?.received ?? 'unknown',
+        queued: handlingResult?.queued ?? 'unknown',
+        auto_submitted: handlingResult?.autoSubmitted ?? 'unknown',
+        ignored: handlingResult?.ignored ?? 'unknown',
+      })
+    } catch (error) {
+      const reason = getErrorMessage(error)
+      logger.error('ExternalInput', error, {
+        trace_id: traceId,
+        stage: 'route-download',
+        result: 'failed',
+        reason,
+      })
+      throw error
+    }
+    if (silent) {
+      await scheduleSilentLightweightCleanup(traceId)
+    }
+  }
+
+  async function processIncomingExternalInputs(inputs: ExternalDownloadInput[], options: { silent?: boolean } = {}) {
+    const traceId = createExternalInputTraceId()
+    const silent = options.silent === true
+    logger.info('ExternalInput', 'structured_inputs_received', {
+      trace_id: traceId,
+      stage: 'received',
+      input_source: 'structured',
+      route: route.path,
+      silent,
+      count: inputs.length,
+      has_cookie: inputs.some((input) => Boolean(input.cookie)),
+      has_user_agent: inputs.some((input) => Boolean(input.userAgent)),
+      header_count: inputs.reduce((count, input) => count + (input.requestHeaders?.length ?? 0), 0),
+    })
+    if (!silent) {
+      const mainWindow = getCurrentWindow()
+      await runExternalInputWindowStage(traceId, 'unminimize', () => mainWindow.unminimize())
+      await runExternalInputWindowStage(traceId, 'show', () => mainWindow.show())
+      await runExternalInputWindowStage(traceId, 'setFocus', () => mainWindow.setFocus())
+    }
+
+    if (!silent && inputs.length > 0 && route.path !== '/task/all') {
+      try {
+        await router.push('/task/all')
+        logger.debug('ExternalInput', 'navigation_completed', {
+          trace_id: traceId,
+          stage: 'navigate',
+          result: 'ok',
+          route: '/task/all',
+        })
+      } catch (error) {
+        const reason = getErrorMessage(error)
+        logger.warn('ExternalInput', 'navigation_failed', {
+          trace_id: traceId,
+          stage: 'navigate',
+          result: 'failed',
+          route: '/task/all',
+          reason,
+        })
+      }
+    }
+
+    logger.debug('ExternalInput', 'download_routing_started', {
+      trace_id: traceId,
+      stage: 'route-download',
+      result: 'start',
+    })
+    try {
+      const tracedInputs = inputs.map((input) => ({ ...input, traceId }))
+      const handlingResult = await appStore.handleExternalInputs(tracedInputs)
+      logger.info('ExternalInput', 'download_routing_completed', {
+        trace_id: traceId,
+        stage: 'route-download',
+        result: 'ok',
+        received: handlingResult?.received ?? 'unknown',
+        queued: handlingResult?.queued ?? 'unknown',
+        auto_submitted: handlingResult?.autoSubmitted ?? 'unknown',
+        ignored: handlingResult?.ignored ?? 'unknown',
+      })
+    } catch (error) {
+      const reason = getErrorMessage(error)
+      logger.error('ExternalInput', error, {
+        trace_id: traceId,
+        stage: 'route-download',
+        result: 'failed',
+        reason,
+      })
+      throw error
+    }
+    if (silent) {
+      await scheduleSilentLightweightCleanup(traceId)
+    }
+  }
+
+  function normalizeDeepLinkPayload(payload: DeepLinkEventPayload): PendingDeepLinksPayload {
+    return Array.isArray(payload) ? { urls: payload, silent: false } : payload
+  }
+
+  function normalizeExternalInputPayload(
+    payload: PendingExternalInputsPayload | ExternalDownloadInput[],
+  ): PendingExternalInputsPayload {
+    return Array.isArray(payload) ? { inputs: payload, silent: false } : payload
+  }
+
+  async function setupExternalInputListeners() {
+    const unlistenDeepLink = registerCleanup(
+      await listen<DeepLinkEventPayload>('deep-link-open', async (event) => {
+        const payload = normalizeDeepLinkPayload(event.payload)
+        await processIncomingDeepLinks(payload.urls, { silent: payload.silent })
+      }),
+    )
+
+    const unlistenExternalInput = registerCleanup(
+      await listen<PendingExternalInputsPayload>('external-input-open', async (event) => {
+        await processIncomingExternalInputs(event.payload.inputs, { silent: event.payload.silent })
+      }),
+    )
+
+    const unlistenSingleInstance = registerCleanup(
+      await listen<string[]>('single-instance-triggered', async (event) => {
+        const argv = event.payload
+        const urls = argv.filter((a) => {
+          const lower = a.toLowerCase()
+          return (
+            !a.startsWith('-') &&
+            (lower.includes('://') ||
+              lower.startsWith('magnet:') ||
+              lower.startsWith('ed2k://') ||
+              lower.endsWith('.torrent'))
+          )
+        })
+        if (urls.length > 0) {
+          logger.info('SingleInstance', `forwarding ${urls.length} URL(s) from second instance`)
+          await processIncomingDeepLinks(urls)
+        }
+      }),
+    )
+
+    return { unlistenDeepLink, unlistenExternalInput, unlistenSingleInstance }
+  }
+
+  // ─── Orchestrator ─────────────────────────────────────────────────
+  async function setupListeners() {
+    teardown()
+    setupExternalInputHandlers()
+
+    await setupPortWatchers()
+    setupNavGuard()
+
+    const { unlistenDeepLink, unlistenExternalInput, unlistenSingleInstance } = await setupExternalInputListeners()
+    const unlistenDragDrop = await setupDragDropListener()
+    const unlistenMenuEvent = await setupMenuListener()
+    const unlistenTrayMenu = await setupTrayListener()
+
+    // After all listeners are registered, consume any deep-link URLs
+    // queued by Rust during window recreation (lightweight mode timing gap).
+    // Normal startups return an empty array — this is a no-op.
+    try {
+      const { invoke } = await import('@tauri-apps/api/core')
+      const pending = normalizeDeepLinkPayload(await invoke<DeepLinkEventPayload>('take_pending_deep_links'))
+      const pendingUrls = pending.urls
+      const silent = pending.silent === true
+      if (pendingUrls.length > 0) {
+        logger.info(
+          'AppEvents',
+          `consuming ${pendingUrls.length} pending deep-link(s) from window recreation silent=${silent}`,
+        )
+        await processIncomingDeepLinks(pendingUrls, { silent })
+      }
+      const pendingExternal = normalizeExternalInputPayload(
+        await invoke<PendingExternalInputsPayload | ExternalDownloadInput[]>('take_pending_external_inputs'),
+      )
+      if (pendingExternal.inputs.length > 0) {
+        logger.info(
+          'AppEvents',
+          `consuming ${pendingExternal.inputs.length} pending external input(s) from window recreation silent=${pendingExternal.silent}`,
+        )
+        await processIncomingExternalInputs(pendingExternal.inputs, { silent: pendingExternal.silent })
+      }
+      const pendingActions = await invoke<PendingFrontendAction[]>('take_pending_frontend_actions')
+      if (pendingActions.length > 0) {
+        logger.info('AppEvents', `consuming ${pendingActions.length} pending frontend action(s) from window recreation`)
+        for (const pendingAction of pendingActions) {
+          if (pendingAction.channel === 'menu-event') {
+            await handleMenuAction(pendingAction.action)
+          } else if (pendingAction.channel === 'tray-menu-action') {
+            await handleTrayAction(pendingAction.action)
+          }
+        }
+      }
+    } catch (e) {
+      logger.debug('AppEvents.pendingNativeEvents', e)
+    }
+
+    return {
+      unlistenDragDrop,
+      unlistenMenuEvent,
+      unlistenTrayMenu,
+      unlistenDeepLink,
+      unlistenExternalInput,
+      unlistenSingleInstance,
+      teardown,
+    }
+  }
+
+  return { setupListeners }
+}

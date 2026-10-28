@@ -5,12 +5,16 @@ repo. If a fact here conflicts with source files or CI config, trust the source 
 
 ## Project Snapshot
 
-BitMaher is a **desktop download manager** for Linux, macOS and Windows. A React interface drives the
+BitMaher is a **desktop download manager** for Linux, macOS and Windows. A Vue 3 interface drives the
 [Aria2-Next](https://github.com/AnInsomniacy/aria2-next) engine, and PocketBase is the database.
 
+The interface is a **port of Rayburst**, the frontend of
+[Motrix Next](https://github.com/Rayburst/Motrix-Next), which is MIT licensed. The attribution is in
+`THIRD_PARTY_NOTICES.md`.
+
 - Backend: Go 1.26 (toolchain pinned in `go.mod`), Wails v3.0.0, PocketBase v0.39.11. The binary is `main.go` at the repo root.
-- Frontend: React 19, TypeScript, Vite 8, TanStack Query v5. Three runtime dependencies only (`react`, `react-dom`,
-  `@tanstack/react-query`) plus `@wailsio/runtime`. No UI kit, no CSS framework, no i18n.
+- Frontend: Vue 3, TypeScript, Vite, Pinia, vue-i18n and Naive UI, ported from Rayburst. The package manager is
+  **pnpm** (`/home/peter/.local/bin/pnpm`, which needs the Node of `/home/peter/.local/bin`).
 - The download engine: **Aria2-Next, a separate GPLv2 child process, driven over JSON-RPC.**
 - Persistence: PocketBase owns the database (SQLite). It runs **as a library**, never as a process. Collections are defined in
   `internal/pocketbase/migrations/*.go` and registered through a blank import in `internal/pocketbase/service.go`.
@@ -36,11 +40,14 @@ Breaking that boundary changes the licensing of the whole application. `internal
 
 ```
 Wails webview
-├── React 19 + Vite + TanStack Query
-│   ├── app/           the shell: the layout, the data fetching, the polling
-│   ├── features/      one panel per concern (downloads, settings, console)
-│   ├── bindings/      typed wrappers over the generated bindings
-│   └── ui/            pure helpers (zoom, shortcuts), unit tested
+├── Vue 3 + Vite + Pinia + vue-i18n + Naive UI
+│   ├── api/           the calls to the backend, and the adapters of its shapes
+│   ├── components/    one panel per concern (task, layout, preference)
+│   ├── composables/   the reusable behaviour (platform, reduced motion, scaling)
+│   ├── platform/      the Tauri-compatible layer over the Wails runtime
+│   ├── stores/        the Pinia stores (task, app, engine, preference)
+│   ├── shared/        the pure logic: the types, the constants, the helpers
+│   └── styles/        the design tokens
 │
 └──── Wails bindings (the only channel) ───────────────────────┐
         Go: internal/bindings/ → internal/downloads/ → internal/aria2/
@@ -104,6 +111,7 @@ go test -race ./internal/... .
 
 # The live checks, against a real engine
 go run ./tools/e2e-check         # the whole pipeline, with a real sidecar
+go run ./tools/pump-check        # the pump publishes the snapshots, with a real sidecar
 go run ./tools/restart-check     # a download survives a restart
 go run ./tools/watchdog-check    # a crashed sidecar is started again
 go run ./tools/bundled-check     # the embedded binary is found and run
@@ -150,15 +158,30 @@ through their namespace: `common:generate:bindings`, `common:fetch:aria2`, `comm
 | The bundled engine version | `build/Taskfile.yml` (`ARIA2_VERSION`), `internal/aria2/binary.go` (`aria2Version`) | `wails3 task common:fetch:aria2` and `go run ./tools/bundled-check` |
 | A dependency | `frontend/package.json` or `go.mod` | `python3 tools/license-audit.py` |
 
+## The Platform Layer
+
+The ported components are written against the **Tauri API**. `frontend/src/platform/` implements that API on top of the
+Wails runtime, and the Vite aliases point `@tauri-apps/*` at it. Three rules follow:
+
+- **The platform layer is the only place that knows about Wails.** A component calls `invoke()`, `listen()` or `getCurrentWindow()`,
+  and the platform layer turns it into a Wails call.
+- **`commands.ts` is the command map.** It maps Rayburst's Tauri commands onto the Go methods. A command with no counterpart
+  maps onto a method that answers the neutral value, and the feature it belongs to stays inert.
+- **`tasks.ts` is the shape adapter.** The backend normalises the engine's state into records with numbers; the ported
+  components read the engine's own shape with strings. The adapter sits between them.
+
+A component that needs a new backend operation gets a method on `AppService`, the bindings are regenerated, and the command
+map gains an entry.
+
 ## Frontend Conventions
 
-- One panel per concern under `frontend/src/features/`. Keep the pure logic (the helpers, the formatters) in a separate file
-  next to the component and unit test it — `features/downloads/format.ts` and its test are the reference.
-- **Never import a generated binding file directly.** Use `frontend/src/bindings/index.ts`. It re-exports the generated
-  modules behind a strongly typed surface and normalises the nullable arrays and maps the generator produces.
-- The Wails event stream pushes the console entries; the download list **polls**, because the engine pushes nothing. Do not
-  raise the interval to "fix" a stale list — the engine has no events to subscribe to.
-- The stylesheet expresses every size in `rem`, because the zoom factor scales the root font size (`frontend/src/ui/zoom.ts`).
+- One panel per concern under `frontend/src/components/`. Keep the pure logic (the helpers, the formatters) in a separate file
+  next to the component and unit test it — `shared/utils/task.ts` and its test are the reference.
+- **Never import a generated binding file directly.** Use `frontend/src/api/aria2.ts`. It wraps the generated modules behind a
+  typed surface and normalises the nullable arrays and maps the generator produces.
+- The **Go pump** pushes the snapshots; the frontend never polls the engine. The `tasks:snapshot` event carries the whole state,
+  and `internal/pump` publishes it. Do not add a poll to "fix" a stale list: the pump is the reader, and it ticks.
+- The stylesheet expresses every size in `rem`, because the zoom factor scales the root font size (`frontend/src/composables/useWindowScale.ts`).
 - `color-scheme: dark` is set on `:root`. Without it, WebKitGTK renders the native select popup with a light background while
   the option text stays light, which makes the selected item appear blank.
 

@@ -20,6 +20,23 @@ import (
 	pb "github.com/incurl/bitmaher/internal/pocketbase"
 )
 
+// engineBinary returns the engine the check runs against.
+//
+// The bundled binary is the one the application ships, so the check
+// tests what the user gets. The BITMAHER_ENGINE_BINARY environment
+// variable overrides it, for a run against another build.
+func engineBinary() string {
+	if path := os.Getenv("BITMAHER_ENGINE_BINARY"); path != "" {
+		return path
+	}
+
+	path, err := aria2.BundledBinaryPath(filepath.Join(os.TempDir(), "bitmaher-check-engine"))
+	if err != nil {
+		return "/usr/bin/aria2-next"
+	}
+	return path
+}
+
 func main() {
 	dir, _ := os.MkdirTemp("", "bitmaher-restart")
 	defer os.RemoveAll(dir)
@@ -41,7 +58,7 @@ func main() {
 	dataDir := filepath.Join(dir, "aria2")
 
 	// --- first run ---
-	mgr := aria2.NewManager(aria2.WithBinary("/usr/bin/aria2-next"),
+	mgr := aria2.NewManager(aria2.WithBinary(engineBinary()),
 		aria2.WithDataDir(dataDir), aria2.WithSecret(secret))
 	ctx := context.Background()
 	if _, err := mgr.Start(ctx); err != nil {
@@ -68,7 +85,7 @@ func main() {
 	fmt.Println("2. The application was closed (the sidecar stopped)")
 
 	// --- second run ---
-	mgr2 := aria2.NewManager(aria2.WithBinary("/usr/bin/aria2-next"),
+	mgr2 := aria2.NewManager(aria2.WithBinary(engineBinary()),
 		aria2.WithDataDir(dataDir), aria2.WithSecret(secret))
 	if _, err := mgr2.Start(ctx); err != nil {
 		panic(err)

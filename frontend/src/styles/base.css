@@ -1,0 +1,140 @@
+/* ── Global Reset ──────────────────────────────────────────────────── */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  font-family: var(--font-family);
+  font-variant: tabular-nums;
+  font-size: var(--font-size-base);
+  color: var(--m3-on-surface);
+  background: transparent;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Scrollbar (M3-aware) ──────────────────────────────────────────── */
+/* Width is 6px instead of 8px to avoid overlapping the ~8px CSD       */
+/* (Client-Side Decoration) resize margin that Tauri creates on all    */
+/* window edges under Wayland (decorations: false). An 8px scrollbar   */
+/* flush against the window edge falls entirely inside the resize       */
+/* hitbox, making it un-draggable and "sticky" after a window resize.   */
+/* 6px breaks the full overlap. macOS/Windows are unaffected — their    */
+/* WMs handle resize outside the webview. Ref: tao#892, wry#1167.      */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-thumb {
+  border-radius: var(--radius-md);
+  background-color: var(--m3-scrollbar-thumb);
+}
+
+::-webkit-scrollbar-thumb:window-inactive {
+  background-color: var(--m3-scrollbar-thumb-inactive);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* ── Base Element Styles ───────────────────────────────────────────── */
+a {
+  color: var(--m3-primary);
+  text-decoration: none;
+}
+
+button {
+  cursor: pointer;
+  border: none;
+  background: none;
+  font-family: inherit;
+  font-size: inherit;
+}
+
+input,
+select,
+textarea {
+  font-family: inherit;
+  font-size: inherit;
+}
+
+/* ── Global Text Selection ────────────────────────────────────────── */
+/* Native desktop apps do not allow selecting UI labels/headings.     */
+/* Opt-in whitelist preserves text interaction where users expect it.  */
+body {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+input,
+textarea,
+[contenteditable],
+code,
+pre,
+.n-input,
+.n-input__textarea-el,
+.n-input__input-el,
+.user-selectable {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.technical-text-wrap {
+  white-space: normal;
+  overflow-wrap: normal;
+  word-break: break-all;
+  hyphens: none;
+}
+
+/* ── Page hidden: pause all infinite animations ────────────────────── */
+/* Prevents WebView2 from re-compositing layers each frame when the     */
+/* window is minimized or the user switches to another app.             */
+/* Toggled by the useVisibilityPause composable via Page Visibility API */
+.animations-paused *,
+.animations-paused *::before,
+.animations-paused *::after {
+  animation-play-state: paused !important;
+}
+
+/* WebView2 handles mouse, pen and touch through native non-client regions. */
+[data-tauri-drag-region] {
+  app-region: drag;
+}
+[data-tauri-drag-region='false'],
+[data-tauri-drag-region] :is(button, a, input, select, textarea, [role='button'], [tabindex]) {
+  app-region: no-drag;
+}
+/* A drag region keeps its area even under elements painted above it, so
+ * overlays must opt out explicitly: the fixed caption buttons (#755) and
+ * everything teleported to <body> (dialogs, menus, popovers). WebView2 152+
+ * also lets drag reach content that overflows a drag region. */
+.caption-bar,
+body > :not(#app) {
+  app-region: no-drag;
+}
+
+/* The floating orb and its panel: transparent around what they draw, sized
+ * to it, and never scrolled. */
+html.float-window-document,
+html.float-window-document body {
+  background: transparent;
+  overflow: clip;
+}
+html.float-window-document #app {
+  width: max-content;
+  height: auto;
+}

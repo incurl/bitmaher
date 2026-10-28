@@ -21,6 +21,12 @@ type AppService struct {
 	// downloads drives the Aria2-Next sidecar and keeps the download
 	// records.
 	downloads *downloads.Service
+	// dataDir is the directory holding the database and the uploads.
+	// The frontend asks for it, because the webview has no access to
+	// the disk.
+	dataDir string
+	// downloadDir is the directory the downloads go to by default.
+	downloadDir string
 }
 
 // NewAppService creates the application service.
@@ -32,12 +38,16 @@ func NewAppService(
 	settings *pocketbase.SettingsStore,
 	log *console.Log,
 	downloadService *downloads.Service,
+	dataDir string,
+	downloadDir string,
 ) *AppService {
 	return &AppService{
-		pb:        pb,
-		settings:  settings,
-		console:   log,
-		downloads: downloadService,
+		pb:          pb,
+		settings:    settings,
+		console:     log,
+		downloads:   downloadService,
+		dataDir:     dataDir,
+		downloadDir: downloadDir,
 	}
 }
 

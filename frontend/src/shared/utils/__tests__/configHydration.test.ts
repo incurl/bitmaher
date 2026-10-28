@@ -1,0 +1,277 @@
+/** @fileoverview Tests for centralized AppConfig hydration. */
+import { describe, expect, it } from 'vitest'
+import {
+  COLOR_SCHEMES,
+  DEFAULT_APP_CONFIG,
+  FILE_ALLOCATION_OPTIONS,
+  APP_LOG_LEVELS,
+  ARIA2_LOG_LEVELS,
+  PROXY_SCOPE_OPTIONS,
+  UPDATE_CHANNELS,
+} from '@shared/constants'
+import { hydrateAppConfig } from '@shared/utils/configHydration'
+import { NUMERIC_CONFIG_CONSTRAINTS } from '@shared/configConstraints'
+import type { AppConfig } from '@shared/types'
+
+describe('hydrateAppConfig', () => {
+  it('hydrates missing top-level fields from defaults', () => {
+    const result = hydrateAppConfig({ theme: 'dark', locale: 'ja' })
+
+    expect(result.config.theme).toBe('dark')
+    expect(result.config.locale).toBe('ja')
+    expect(result.config.colorScheme).toBe(DEFAULT_APP_CONFIG.colorScheme)
+    expect(result.config.maxConcurrentDownloads).toBe(DEFAULT_APP_CONFIG.maxConcurrentDownloads)
+  })
+
+  it('deep-hydrates fixed nested objects without overwriting saved subfields', () => {
+    const result = hydrateAppConfig({
+      proxy: { mode: 'manual', server: 'http://127.0.0.1:7890' } as AppConfig['proxy'],
+      clipboard: { http: false } as AppConfig['clipboard'],
+    })
+
+    expect(result.config.proxy).toEqual({
+      ...DEFAULT_APP_CONFIG.proxy,
+      mode: 'manual',
+      server: 'http://127.0.0.1:7890',
+    })
+    expect(result.config.clipboard).toEqual({ ...DEFAULT_APP_CONFIG.clipboard, http: false })
+  })
+
+  it('preserves user-owned arrays including intentionally empty arrays', () => {
+    const result = hydrateAppConfig({
+      trackerSource: [],
+      customTrackerUrls: ['https://example.com/trackers.txt'],
+      historyDirectories: [],
+      favoriteDirectories: ['/downloads'],
+      fileCategories: [],
+    })
+
+    expect(result.config.trackerSource).toEqual([])
+    expect(result.config.customTrackerUrls).toEqual(['https://example.com/trackers.txt'])
+    expect(result.config.historyDirectories).toEqual([])
+    expect(result.config.favoriteDirectories).toEqual(['/downloads'])
+    expect(result.config.fileCategories).toEqual([])
+  })
+
+  it('repairs user-agent profiles, rules, and recent profile ids', () => {
+    const result = hydrateAppConfig({
+      userAgentProfiles: [
+        { id: 'quark', name: 'Quark Drive', value: 'QuarkUA/1.0', createdAt: 1, updatedAt: 1 },
+        { id: 'quark', name: 'Duplicate', value: 'DuplicateUA/1.0', createdAt: 2, updatedAt: 2 },
+        { id: 'empty', name: 'Empty', value: '', createdAt: 3, updatedAt: 3 },
+      ],
+      userAgentRules: [
+        {
+          id: 'quark-rule',
+          enabled: true,
+          hostPattern: '*.quark.cn',
+          profileId: 'quark',
+          overridePlugin: false,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+        {
+          id: 'missing-profile',
+          enabled: true,
+          hostPattern: 'pan.baidu.com',
+          profileId: 'missing',
+          overridePlugin: true,
+          createdAt: 2,
+          updatedAt: 2,
+        },
+      ],
+      recentUserAgentProfileIds: ['quark', 'missing', 'quark'],
+    } as Partial<AppConfig>)
+
+    expect(result.config.userAgentProfiles).toEqual([
+      { id: 'quark', name: 'Quark Drive', value: 'QuarkUA/1.0', createdAt: 1, updatedAt: 1 },
+    ])
+    expect(result.config.userAgentRules).toEqual([
+      {
+        id: 'quark-rule',
+        enabled: true,
+        hostPattern: '*.quark.cn',
+        profileId: 'quark',
+        overridePlugin: false,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ])
+    expect(result.config.recentUserAgentProfileIds).toEqual(['quark'])
+    expect(result.repairs).toEqual(
+      expect.arrayContaining(['userAgentProfiles', 'userAgentRules', 'recentUserAgentProfileIds']),
+    )
+  })
+
+  it('repairs invalid scalar enums and records repair names', () => {
+    const result = hydrateAppConfig({
+      theme: 'neon' as AppConfig['theme'],
+      taskCardMode: 'tiny' as AppConfig['taskCardMode'],
+      colorScheme: 'missing-scheme',
+      updateChannel: 'nightly' as AppConfig['updateChannel'],
+      logLevel: 'verbose' as AppConfig['logLevel'],
+      aria2LogLevel: 'verbose' as AppConfig['aria2LogLevel'],
+      fileAllocation: 'magic',
+      fileDeletionMode: 'erase' as AppConfig['fileDeletionMode'],
+    })
+
+    expect(result.config.theme).toBe(DEFAULT_APP_CONFIG.theme)
+    expect(result.config.taskCardMode).toBe(DEFAULT_APP_CONFIG.taskCardMode)
+    expect(result.config.colorScheme).toBe(DEFAULT_APP_CONFIG.colorScheme)
+    expect(result.config.updateChannel).toBe(DEFAULT_APP_CONFIG.updateChannel)
+    expect(result.config.logLevel).toBe(DEFAULT_APP_CONFIG.logLevel)
+    expect(result.config.aria2LogLevel).toBe(DEFAULT_APP_CONFIG.aria2LogLevel)
+    expect(result.config.fileAllocation).toBe(DEFAULT_APP_CONFIG.fileAllocation)
+    expect(result.config.fileDeletionMode).toBe(DEFAULT_APP_CONFIG.fileDeletionMode)
+    expect(result.repairs).toEqual(
+      expect.arrayContaining([
+        'theme',
+        'taskCardMode',
+        'colorScheme',
+        'updateChannel',
+        'logLevel',
+        'aria2LogLevel',
+        'fileAllocation',
+        'fileDeletionMode',
+      ]),
+    )
+  })
+
+  it('repairs invalid external BitTorrent endpoint values', () => {
+    const result = hydrateAppConfig({
+      btExternalIp: 'tracker.example.com',
+      btExternalPort: 70000,
+    })
+
+    expect(result.config.btExternalIp).toBe(DEFAULT_APP_CONFIG.btExternalIp)
+    expect(result.config.btExternalPort).toBe(DEFAULT_APP_CONFIG.btExternalPort)
+    expect(result.repairs).toEqual(expect.arrayContaining(['btExternalIp', 'btExternalPort']))
+  })
+
+  it('repairs invalid BitTorrent identity values', () => {
+    const result = hydrateAppConfig({
+      btUserAgent: 'invalid\nidentity',
+      btPeerIdPrefix: '超过二十字节的节点标识前缀',
+    })
+
+    expect(result.config.btUserAgent).toBe(DEFAULT_APP_CONFIG.btUserAgent)
+    expect(result.config.btPeerIdPrefix).toBe(DEFAULT_APP_CONFIG.btPeerIdPrefix)
+    expect(result.repairs).toEqual(expect.arrayContaining(['btUserAgent', 'btPeerIdPrefix']))
+  })
+
+  it('preserves stream connection values accepted by the engine', () => {
+    const valid = hydrateAppConfig({
+      streamMaxConnections: 128,
+    })
+    const invalid = hydrateAppConfig({
+      streamMaxConnections: NUMERIC_CONFIG_CONSTRAINTS.streamMaxConnections.max + 1,
+    })
+
+    expect(valid.config.streamMaxConnections).toBe(128)
+    expect(valid.repairs).not.toContain('streamMaxConnections')
+    expect(invalid.config.streamMaxConnections).toBe(DEFAULT_APP_CONFIG.streamMaxConnections)
+    expect(invalid.repairs).toContain('streamMaxConnections')
+  })
+
+  it('repairs invalid nested values and keeps valid nested values', () => {
+    const result = hydrateAppConfig({
+      proxy: { ...DEFAULT_APP_CONFIG.proxy, mode: 'broken' as AppConfig['proxy']['mode'], scope: ['download', 'bad'] },
+    })
+
+    expect(result.config.proxy.mode).toBe('direct')
+    expect(result.config.proxy.scope).toEqual(['download'])
+    expect(result.repairs).toEqual(expect.arrayContaining(['proxy.mode']))
+  })
+
+  it('repairs invalid manual task order entries', () => {
+    const result = hydrateAppConfig({
+      taskManualOrder: {
+        all: ['z'],
+        progress: ['a', '', 'a', 1],
+        failed: 'bad',
+        completed: [],
+      } as never,
+    })
+
+    expect(result.config.taskManualOrder).toEqual({
+      all: ['z'],
+      progress: ['a'],
+      failed: [],
+      completed: [],
+    })
+    expect(result.repairs).toEqual(expect.arrayContaining(['taskManualOrder.progress', 'taskManualOrder.failed']))
+  })
+
+  it('repairs invalid proxy mode to disabled direct mode', () => {
+    const result = hydrateAppConfig({
+      proxy: { ...DEFAULT_APP_CONFIG.proxy, mode: 'auto' as never, server: 'http://127.0.0.1:7890' },
+    })
+
+    expect(result.config.proxy.mode).toBe('direct')
+    expect(result.repairs).toContain('proxy.mode')
+  })
+
+  it('rejects removed BitTorrent encryption values', () => {
+    const result = hydrateAppConfig({
+      btEncryption: 'enabled' as never,
+    })
+
+    expect(result.config.btEncryption).toBe('preferred')
+    expect(result.repairs).toContain('btEncryption')
+  })
+
+  it('discards unknown preference keys', () => {
+    const result = hydrateAppConfig({
+      autoSyncTracker: true,
+    } as Partial<AppConfig> & { autoSyncTracker: boolean })
+
+    expect(result.config).not.toHaveProperty('autoSyncTracker')
+    expect(result.config.btTrackerAutoSync).toBe(DEFAULT_APP_CONFIG.btTrackerAutoSync)
+  })
+
+  it('generates missing secrets and preserves intentionally cleared secrets', () => {
+    const missing = hydrateAppConfig({})
+    const cleared = hydrateAppConfig({
+      rpcSecret: '',
+      extensionApiSecret: '',
+    })
+
+    expect(missing.config.rpcSecret).toHaveLength(16)
+    expect(missing.config.extensionApiSecret).toHaveLength(16)
+    expect(missing.config.rpcSecret).not.toBe(missing.config.extensionApiSecret)
+    expect(missing.repairs).toEqual(expect.arrayContaining(['rpcSecret', 'extensionApiSecret']))
+    expect(missing.shouldPersist).toBe(true)
+    expect(cleared.config.rpcSecret).toBe('')
+    expect(cleared.config.extensionApiSecret).toBe('')
+  })
+
+  it('keeps defaults aligned with allowed enum sets', () => {
+    expect(['auto', 'light', 'dark']).toContain(DEFAULT_APP_CONFIG.theme)
+    expect(['full', 'compact']).toContain(DEFAULT_APP_CONFIG.taskCardMode)
+    expect(COLOR_SCHEMES.some((scheme) => scheme.id === DEFAULT_APP_CONFIG.colorScheme)).toBe(true)
+    expect(UPDATE_CHANNELS).toContain(DEFAULT_APP_CONFIG.updateChannel)
+    expect(APP_LOG_LEVELS).toContain(DEFAULT_APP_CONFIG.logLevel)
+    expect(ARIA2_LOG_LEVELS).toContain(DEFAULT_APP_CONFIG.aria2LogLevel)
+    expect(['download-all', 'prompt', 'manual']).toContain(DEFAULT_APP_CONFIG.magnetFileSelectionPolicy)
+    expect(FILE_ALLOCATION_OPTIONS).toContain(DEFAULT_APP_CONFIG.fileAllocation)
+    expect(DEFAULT_APP_CONFIG.proxy.scope).toEqual(PROXY_SCOPE_OPTIONS)
+  })
+})
+
+describe('current category directory schema', () => {
+  it('requires an explicit path mode instead of guessing from an old absolute path', () => {
+    // Deliberately pass a persisted object from the removed schema.
+    const persisted: unknown = {
+      fileCategoryEnabled: true,
+      fileCategories: [
+        { label: 'file-category-programs', directory: '/old/Programs', extensions: ['exe'], builtIn: true },
+      ],
+    }
+    const result = hydrateAppConfig(persisted as Partial<AppConfig>)
+    expect(result.config.fileCategories.every((category) => category.directoryMode === 'relative')).toBe(true)
+    expect(result.config.fileCategories.find((category) => category.extensions.includes('exe'))?.directory).toBe(
+      'Programs',
+    )
+    expect(result.repairs).toContain('fileCategories')
+  })
+})

@@ -18,12 +18,29 @@ import (
 	"github.com/incurl/bitmaher/internal/aria2"
 )
 
+// engineBinary returns the engine the check runs against.
+//
+// The bundled binary is the one the application ships, so the check
+// tests what the user gets. The BITMAHER_ENGINE_BINARY environment
+// variable overrides it, for a run against another build.
+func engineBinary() string {
+	if path := os.Getenv("BITMAHER_ENGINE_BINARY"); path != "" {
+		return path
+	}
+
+	path, err := aria2.BundledBinaryPath(filepath.Join(os.TempDir(), "bitmaher-check-engine"))
+	if err != nil {
+		return "/usr/bin/aria2-next"
+	}
+	return path
+}
+
 func main() {
 	dir, _ := os.MkdirTemp("", "bitmaher-leak")
 	defer os.RemoveAll(dir)
 
 	mgr := aria2.NewManager(
-		aria2.WithBinary("/usr/bin/aria2-next"),
+		aria2.WithBinary(engineBinary()),
 		aria2.WithDataDir(filepath.Join(dir, "aria2")),
 		aria2.WithAutoRestart(true),
 	)

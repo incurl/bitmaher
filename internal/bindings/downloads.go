@@ -240,6 +240,11 @@ func (s *AppService) PauseDownload(ctx context.Context, id string) error {
 	return s.downloads.Pause(ctx, id)
 }
 
+// PauseDownloadAll pauses every running download.
+func (s *AppService) PauseDownloadAll(ctx context.Context) error {
+	return s.downloads.PauseAll(ctx)
+}
+
 // ResumeDownload resumes a paused download.
 func (s *AppService) ResumeDownload(ctx context.Context, id string) error {
 	return s.downloads.Resume(ctx, id)

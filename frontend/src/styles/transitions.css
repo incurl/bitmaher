@@ -1,0 +1,57 @@
+/* ── Animations ────────────────────────────────────────────────────── */
+@keyframes mo-progress-active {
+  0% {
+    opacity: 0.1;
+    width: 0;
+  }
+
+  20% {
+    opacity: 0.5;
+    width: 0;
+  }
+
+  100% {
+    opacity: 0;
+    width: 100%;
+  }
+}
+
+.fade-enter-active {
+  transition:
+    opacity 0.2s cubic-bezier(0.2, 0, 0, 1),
+    transform 0.2s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.fade-leave-active {
+  transition:
+    opacity 0.15s cubic-bezier(0.3, 0, 0.8, 0.15),
+    transform 0.15s cubic-bezier(0.3, 0, 0.8, 0.15);
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+  transform: scale(0.98);
+}
+
+.fade-scale-enter-active {
+  transition:
+    opacity 0.22s cubic-bezier(0.2, 0, 0, 1),
+    transform 0.22s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.fade-scale-leave-active {
+  transition:
+    opacity 0.15s cubic-bezier(0.3, 0, 0.8, 0.15),
+    transform 0.15s cubic-bezier(0.3, 0, 0.8, 0.15);
+}
+
+.fade-scale-enter-from {
+  opacity: 0;
+  transform: scale(0.94);
+}
+
+.fade-scale-leave-to {
+  opacity: 0;
+  transform: scale(0.96);
+}

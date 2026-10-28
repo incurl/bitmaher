@@ -6,6 +6,59 @@ present in the dependency tree**. This is verified automatically by
 `tools/license-audit.py`, which exits non-zero if a copyleft licence is
 introduced.
 
+## The ported frontend
+
+The interface of BitMaher is a port of the **Rayburst** frontend, the
+interface of [Motrix Next](https://github.com/Rayburst/Motrix-Next),
+which is licensed under the **MIT licence**.
+
+| Project | Why it is here | Licence |
+| --- | --- | --- |
+| [Rayburst / Motrix Next](https://github.com/Rayburst/Motrix-Next) | The Vue 3 interface: the task list, the task detail, the add-task dialog, the settings and the design system | MIT |
+
+The port is a derivative work, and it keeps the copyright notice of the
+original:
+
+```
+MIT License
+
+Copyright (c) 2025-present AnInsomniacy
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+What the port changed, and what it kept:
+
+- The **interface** is Rayburst's: the components, the layout, the
+  motion, the styles and the twenty-seven translations.
+- The **backend** is BitMaher's: the Go services, the PocketBase
+  database and the Aria2-Next sidecar. The Tauri commands of Rayburst
+  are answered by a platform layer (`frontend/src/platform/`) that maps
+  them onto the Wails bindings.
+- The **push model** is Rayburst's: the Rust backend of Rayburst
+  publishes a `tasks:snapshot` event, and the Go backend of BitMaher
+  does the same, from `internal/pump`.
+
+The MIT licence of Rayburst and the MIT licence of BitMaher are
+compatible: both permit redistribution under the same terms, and the
+notice above is carried in this file.
+
 ## The bundled download engine
 
 BitMaher **ships a prebuilt binary of Aria2-Next**, which is licensed
@@ -49,8 +102,18 @@ tree is listed further down.
 | [Wails v3](https://github.com/wailsapp/wails) | The desktop shell: the window, the asset server, the service bindings and the event bus | MIT |
 | [PocketBase](https://github.com/pocketbase/pocketbase) | The embedded database: the schema, the migrations, the file storage and the REST API | MIT |
 | [dbx](https://github.com/pocketbase/dbx) | The database query builder PocketBase is built on | MIT |
-| [React](https://github.com/reactjs/react) | The UI | MIT |
-| [TanStack Query](https://github.com/TanStack/query) | The data layer: the queries, the mutations and the cache invalidation | MIT |
+| [Vue](https://github.com/vuejs/core) | The UI | MIT |
+| [Pinia](https://github.com/vuejs/pinia) | The stores: the task list, the settings, the engine state | MIT |
+| [Vue Router](https://github.com/vuejs/router) | The routes: the task view, the settings, the about panel | MIT |
+| [Vue I18n](https://github.com/intlify/vue-i18n) | The translations | MIT |
+| [Naive UI](https://github.com/tusen-ai/naive-ui) | The widgets: the buttons, the inputs, the dialogs, the tables | MIT |
+| [SortableJS](https://github.com/SortableJS/Sortable) | The reordering of the task list | MIT |
+| [@vueuse/core](https://github.com/vueuse/vueuse) | The composables that watch the browser for the platform | MIT |
+| [@vicons/ionicons5](https://github.com/viconsjs/vicons) | The icons | MIT |
+| [@material/material-color-utilities](https://github.com/material-foundation/material-color-utilities) | The colour scheme of the interface | Apache-2.0 |
+| [marked](https://github.com/markedjs/marked) | The release notes of the updater | MIT |
+| [DOMPurify](https://github.com/cure53/DOMPurify) | The sanitising of the release notes | Apache-2.0 |
+| [lodash-es](https://github.com/lodash/lodash) | The helpers of the ported code | MIT |
 | [Vite](https://github.com/vitejs/vite) | The frontend build and the dev server | MIT |
 | [Vitest](https://github.com/vitest-dev/vitest) | The frontend test runner | MIT |
 | [@wailsio/runtime](https://github.com/wailsapp/wails) | The runtime the generated bindings call | MIT |
@@ -138,140 +201,43 @@ tree is listed further down.
 - `v2@v2.0.7`
 
 ### npm packages — Apache-2.0 (4)
-
-- `detect-libc`
-- `expect-type`
+- `dompurify`
+- `material-color-utilities`
 - `typescript`
-- `xml-name-validator`
-
-### npm packages — BSD-3-Clause (4)
-
-- `entities`
-- `source-map-js`
-- `tough-cookie`
-- `webidl-conversions`
-
-### npm packages — ISC (3)
-
-- `lru-cache`
-- `picocolors`
-- `siginfo`
-
-### npm packages — MIT (97)
-
-- `@asamuzakjp/css-color`
-- `@csstools/color-helpers`
-- `@csstools/css-calc`
-- `@csstools/css-color-parser`
-- `@csstools/css-parser-algorithms`
-- `@csstools/css-tokenizer`
-- `@jridgewell/sourcemap-codec`
-- `@oxc-project/types`
-- `@rolldown/pluginutils`
-- `@standard-schema/spec`
-- `@tanstack/query-core`
-- `@tanstack/react-query`
-- `@types/chai`
-- `@types/deep-eql`
-- `@types/estree`
-- `@types/node`
-- `@types/react`
-- `@types/react-dom`
-- `@vitejs/plugin-react`
-- `@vitest/expect`
-- `@vitest/mocker`
-- `@vitest/pretty-format`
-- `@vitest/runner`
-- `@vitest/snapshot`
-- `@vitest/spy`
-- `@vitest/utils`
-- `agent-base`
-- `assertion-error`
-- `asynckit`
-- `call-bind-apply-helpers`
-- `chai`
-- `combined-stream`
-- `convert-source-map`
-- `cssstyle`
-- `csstype`
-- `data-urls`
-- `debug`
-- `decimal.js`
-- `delayed-stream`
-- `dunder-proto`
-- `es-define-property`
-- `es-errors`
-- `es-module-lexer`
-- `es-object-atoms`
-- `es-set-tostringtag`
-- `estree-walker`
-- `fdir`
-- `form-data`
-- `function-bind`
-- `get-intrinsic`
-- `get-proto`
-- `gopd`
-- `has-symbols`
-- `has-tostringtag`
-- `hasown`
-- `html-encoding-sniffer`
-- `http-proxy-agent`
-- `https-proxy-agent`
-- `iconv-lite`
-- `jsdom`
-- `magic-string`
-- `math-intrinsics`
-- `mime-db`
-- `mime-types`
-- `ms`
-- `nanoid`
-- `nwsapi`
-- `obug`
-- `parse5`
-- `pathe`
-- `picomatch`
-- `postcss`
-- `react`
-- `react-dom`
-- `rolldown`
-- `rrweb-cssom`
-- `safer-buffer`
-- `scheduler`
-- `std-env`
-- `symbol-tree`
-- `tinybench`
-- `tinyexec`
-- `tinyglobby`
-- `tinyrainbow`
-- `tldts`
-- `tldts-core`
-- `tr46`
-- `undici-types`
 - `vite`
+
+### npm packages — BSD-3-Clause (1)
+- `marked`
+
+### npm packages — ISC (1)
+- `sanitize-filename`
+
+### npm packages — MIT (20)
+- `auto-animate`
+- `core`
+- `happy-dom`
+- `intl-localematcher`
+- `lodash-es`
+- `naive-ui`
+- `node`
+- `picomatch`
+- `pinia`
+- `plugin-vue`
+- `prettier`
+- `sortablejs`
+- `test-utils`
+- `tsconfig`
+- `unplugin-vue-i18n`
 - `vitest`
-- `w3c-xmlserializer`
-- `whatwg-encoding`
-- `whatwg-mimetype`
-- `whatwg-url`
-- `why-is-node-running`
-- `ws`
-- `xmlchars`
+- `vue`
+- `vue-i18n`
+- `vue-router`
+- `vue-tsc`
 
-### npm packages — MPL-2.0 (3)
-
-- `lightningcss`
-- `lightningcss-linux-x64-gnu`
-- `lightningcss-linux-x64-musl`
-
-### npm packages — UNKNOWN (7)
-
-- `@rolldown/binding-linux-x64-gnu`
-- `@rolldown/binding-linux-x64-musl`
-- `@wailsio/runtime`
-- `is-potential-custom-element-name`
-- `punycode`
-- `saxes`
-- `stackback`
+### npm packages — UNKNOWN (3)
+- `ionicons5`
+- `marked-alert`
+- `runtime`
 
 ## Adding a dependency
 

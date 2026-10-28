@@ -10,7 +10,7 @@ by accident.
 | Shell | Wails v3 | A native window around a webview. The Go process owns the window and the backend; the webview owns the UI. |
 | Backend | Go | One binary, one process, no sidecar. |
 | Storage | PocketBase, as a library | Gives a real database, migrations, file storage and access rules without running a server. |
-| UI | React 19 + Vite + TanStack Query | The usual stack. The scaffold deliberately adds nothing else. |
+| UI | Vue 3 + Vite + Pinia + vue-i18n + Naive UI | Ported from Rayburst, the frontend of Motrix Next. MIT licensed, so it could be reused as it is. |
 
 ## PocketBase runs as a library, not as a process
 
@@ -74,8 +74,12 @@ domain.
   and waits for them. The Wails `OnShutdown` hook calls it, so quitting the application no longer kills a job mid-write.
 - **The interrupted jobs are reconciled at startup.** A job that was pending or running when the process died is marked as
   failed with an explanation, so it appears in the history and the user can delete it.
-- **The events are a push, the polling is a net.** The backend emits `job:updated` on every transition. The frontend also
-  polls with a React Query `refetchInterval`. The event is the mechanism; the poll is the safety net for a missed event.
+- **The events are a push, and there is no polling.** The Go pump (`internal/pump`) is the single reader of the engine's
+  state. It ticks every 500 ms and publishes the whole state as a `tasks:snapshot` event. The frontend waits for the snapshot
+  and replaces its list with it. An action that changes a download wakes the pump, so the change shows up at once.
+
+  This mirrors Rayburst, whose Rust backend pushes the same event. The engine itself pushes nothing — there is no
+  `aria2.onDownloadStart` and no notification of a download that moved — so the pump is what turns the polling into a push.
 
 ## The secrets are write-only
 

@@ -31,6 +31,7 @@ import (
 	"github.com/incurl/bitmaher/internal/console"
 	"github.com/incurl/bitmaher/internal/downloads"
 	"github.com/incurl/bitmaher/internal/pocketbase"
+	"github.com/incurl/bitmaher/internal/pump"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
@@ -44,6 +45,16 @@ func init() {
 	// Register the console entry event so the binding generator produces
 	// a strongly typed TS API for it.
 	application.RegisterEvent[console.Entry]("console:entry")
+
+	// The snapshot carries the whole state of the engine. It is
+	// registered as well, so that the binding generator produces a
+	// strongly typed TS API for it.
+	application.RegisterEvent[pump.Snapshot](pump.EventSnapshot)
+
+	// The frontend writes to the log through this event. The payload is
+	// a console.Entry, so that the entries of the frontend and of the
+	// backend have the same shape.
+	application.RegisterEvent[console.Entry](bindings.EventFrontendLog)
 }
 
 func main() {
@@ -70,6 +81,9 @@ func run() error {
 	// created once the Wails application exists, so it is declared here
 	// and assigned later.
 	var bridge *bindings.EventBridge
+	// stopConsoleListener stops the listener that takes the log entries
+	// of the frontend.
+	var stopConsoleListener func()
 
 	// The debug console records the application traffic for the panel
 	// at the bottom of the window.
@@ -96,7 +110,21 @@ func run() error {
 	// step with it.
 	downloadService := downloads.NewService(sidecar, downloads.NewStore(pbService.App()), consoleLog)
 
-	appService := bindings.NewAppService(pbService, settings, consoleLog, downloadService)
+	// The service knows where the data lives, because the frontend asks
+	// the backend: the webview has no access to the disk.
+	appService := bindings.NewAppService(
+		pbService,
+		settings,
+		consoleLog,
+		downloadService,
+		pbService.DataDir(),
+		downloadDir(settings),
+	)
+
+	// The pump is the single reader of the engine's state. It publishes
+	// the snapshots as Wails events, so that the frontend never has to
+	// poll the engine.
+	enginePump := pump.New(pump.NewEngine(downloadService, sidecar), nil)
 
 	// Mount PocketBase's own REST and file API alongside the static
 	// frontend. This keeps everything on a single origin: no extra
@@ -125,6 +153,13 @@ func run() error {
 		// child process, and it must not outlive the application that
 		// started it.
 		OnShutdown: func() {
+			// The pump stops before the sidecar, so that it does not
+			// read an engine that is on its way out.
+			enginePump.Stop()
+			if stopConsoleListener != nil {
+				stopConsoleListener()
+			}
+
 			shutdownCtx, cancel := context.WithTimeout(context.Background(), sidecarShutdown)
 			defer cancel()
 			if err := sidecar.Stop(shutdownCtx); err != nil {
@@ -133,9 +168,15 @@ func run() error {
 		},
 	})
 
-	// The event bridge pushes job updates to the frontend.
+	// The event bridge pushes job updates to the frontend, and takes
+	// the log entries of the frontend.
 	bridge = bindings.NewEventBridge(app)
 	consoleLog.SetEmitter(bridge)
+	stopConsoleListener = bridge.ListenConsoleEntries(consoleLog)
+
+	// The pump publishes the snapshots through the same bridge.
+	enginePump.SetEmitter(bridge)
+	enginePump.Start()
 
 	app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:  bindings.AppName,
@@ -316,6 +357,26 @@ func reconcileDownloads(
 	}
 
 	consoleLog.Info("aria2", fmt.Sprintf("%d download(s) were picked up from the session file", total))
+}
+
+// downloadDir returns the directory the downloads go to by default.
+//
+// The setting is empty when the user never chose one, in which case the
+// home directory of the user is the answer.
+func downloadDir(settings *pocketbase.SettingsStore) string {
+	aria2Settings, err := settings.GetAria2()
+	if err != nil {
+		return ""
+	}
+	if aria2Settings.DownloadDir != "" {
+		return aria2Settings.DownloadDir
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, "Downloads")
 }
 
 // formatSpeed renders a speed in the form the engine expects.

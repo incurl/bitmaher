@@ -201,20 +201,24 @@ func (c *Client) AddURI(ctx context.Context, uris []string, options map[string]s
 // AddTorrent adds a BitTorrent download from a .torrent file.
 //
 // The torrent is passed base64 encoded, as the RPC surface requires.
-// The select option holds the one-based indices of the files the user
-// chose; an empty selection downloads every file.
 //
-// The files of a torrent can only be chosen this way, and only while
-// the download is paused: the engine refuses to change the selection
-// of a running download.
+// The parameter order matters, and it differs from addUri: the engine
+// takes the torrent, then the webseed URIs, then the options. An empty
+// list stands in for the URIs, which is what a torrent without webseeds
+// has.
 func (c *Client) AddTorrent(ctx context.Context, torrentBase64 string, options map[string]string) (string, error) {
 	if torrentBase64 == "" {
 		return "", fmt.Errorf("aria2: the torrent file is empty")
 	}
-	params := []any{torrentBase64}
+
+	// The engine refuses the call when the URIs slot holds an object
+	// instead of a list.
+	uris := []string{}
+	params := []any{torrentBase64, uris}
 	if len(options) > 0 {
 		params = append(params, options)
 	}
+
 	var gid string
 	if err := c.call(ctx, methodAddTorrent, params, &gid); err != nil {
 		return "", err

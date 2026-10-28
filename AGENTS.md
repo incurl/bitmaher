@@ -108,6 +108,7 @@ go run ./tools/restart-check     # a download survives a restart
 go run ./tools/watchdog-check    # a crashed sidecar is started again
 go run ./tools/bundled-check     # the embedded binary is found and run
 go run ./tools/leak-check        # no sidecar outlives the application
+go run ./tools/torrent-check     # a torrent's files are listed and chosen
 
 # Frontend (from frontend/)
 npm install --legacy-peer-deps   # npm 9 cannot resolve the vitest 4 tree

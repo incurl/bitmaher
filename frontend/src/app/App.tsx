@@ -320,6 +320,7 @@ function App() {
   return (
     <div className="app app-downloads">
       <header className="app-header">
+        <img className="app-logo" src="/appicon.png" alt="" aria-hidden="true" />
         <span className="app-brand">
           BitMaher
           <small>Wails v3 · PocketBase · aria2-next</small>

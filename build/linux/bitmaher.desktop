@@ -1,8 +1,8 @@
 [Desktop Entry]
 Type=Application
-Name=valkyrie
-Exec=valkyrie
-Icon=valkyrie
+Name=bitmaher
+Exec=bitmaher
+Icon=bitmaher
 Categories=Development;
 Terminal=false
 Keywords=wails

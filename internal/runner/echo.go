@@ -1,6 +1,6 @@
 // Package runner holds the example job runner of the scaffold.
 //
-// It is the extension point of Valkyrie: replace it with a runner that
+// It is the extension point of BitMaher: replace it with a runner that
 // talks to your own backend. The queue, the persistence, the
 // cancellation and the events all work the same way, whatever the
 // runner does.
@@ -15,9 +15,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/incurl/valkyrie/internal/console"
-	"github.com/incurl/valkyrie/internal/jobs"
-	"github.com/incurl/valkyrie/internal/pocketbase"
+	"github.com/incurl/bitmaher/internal/console"
+	"github.com/incurl/bitmaher/internal/jobs"
+	"github.com/incurl/bitmaher/internal/pocketbase"
 )
 
 // Echo is a runner that echoes the prompt back.

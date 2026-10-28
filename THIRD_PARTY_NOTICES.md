@@ -1,14 +1,47 @@
 # Third party notices
 
-Valkyrie is built on the following third party projects. Every licence
+BitMaher is built on the following third party projects. Every licence
 below is permissive; **no GPL, AGPL or other copyleft dependency is
 present in the dependency tree**. This is verified automatically by
 `tools/license-audit.py`, which exits non-zero if a copyleft licence is
 introduced.
 
+## The bundled download engine
+
+BitMaher **ships a prebuilt binary of Aria2-Next**, which is licensed
+under the **GNU General Public License, version 2**.
+
+| Project | Why it is here | Licence |
+| --- | --- | --- |
+| [Aria2-Next](https://github.com/AnInsomniacy/aria2-next) | The download engine: the HTTP, BitTorrent and Metalink transfers | **GPL-2.0** |
+
+This is deliberate, and the boundary around it is deliberate too:
+
+- Aria2-Next runs as a **separate, independent child process**. BitMaher
+  starts it, watches it, drives it over JSON-RPC and stops it again.
+- Nothing in the BitMaher source tree links against Aria2-Next, imports
+  its headers, vendors its sources or calls into it through CGO. The
+  coupling is a loopback socket carrying a documented protocol, which is
+  an interface between two independent programs rather than a link
+  between two parts of one program.
+- The binary is shipped as an opaque executable. Its sources are **not**
+  included in this repository: they are offered by the upstream project,
+  at <https://github.com/AnInsomniacy/aria2-next>, which is what the GPL
+  requires of a binary distribution.
+- The bundled binaries are fetched by `wails3 task common:fetch:aria2`
+  and are not kept in the Git repository.
+
+Because the engine is a separate work that BitMaher does not link
+against, BitMaher's own code stays under its own licence. The engine's
+GPL terms apply to the engine itself and to the binary as distributed.
+
+The application can also be pointed at a **system-installed
+aria2-next**, in which case nothing GPL is bundled at all. That choice
+is in the settings, under "Engine".
+
 ## The direct dependencies
 
-These are the projects Valkyrie imports directly. The full transitive
+These are the projects BitMaher imports directly. The full transitive
 tree is listed further down.
 
 | Project | Why it is here | Licence |
@@ -21,6 +54,7 @@ tree is listed further down.
 | [Vite](https://github.com/vitejs/vite) | The frontend build and the dev server | MIT |
 | [Vitest](https://github.com/vitest-dev/vitest) | The frontend test runner | MIT |
 | [@wailsio/runtime](https://github.com/wailsapp/wails) | The runtime the generated bindings call | MIT |
+
 
 ## The full dependency tree
 

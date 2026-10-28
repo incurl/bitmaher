@@ -5,13 +5,13 @@
 !include "FileFunc.nsh"
 
 !ifndef INFO_PROJECTNAME
-    !define INFO_PROJECTNAME "valkyrie"
+    !define INFO_PROJECTNAME "bitmaher"
 !endif
 !ifndef INFO_COMPANYNAME
     !define INFO_COMPANYNAME "incurl"
 !endif
 !ifndef INFO_PRODUCTNAME
-    !define INFO_PRODUCTNAME "Valkyrie"
+    !define INFO_PRODUCTNAME "BitMaher"
 !endif
 !ifndef INFO_PRODUCTVERSION
     !define INFO_PRODUCTVERSION "0.1.0"

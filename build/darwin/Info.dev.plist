@@ -4,11 +4,11 @@
         <key>CFBundlePackageType</key>
             <string>APPL</string>
         <key>CFBundleName</key>
-            <string>Valkyrie</string>
+            <string>BitMaher</string>
         <key>CFBundleExecutable</key>
-            <string>valkyrie</string>
+            <string>bitmaher</string>
         <key>CFBundleIdentifier</key>
-            <string>com.incurl.valkyrie</string>
+            <string>com.incurl.bitmaher</string>
         <key>CFBundleVersion</key>
             <string>0.1.0</string>
         <key>CFBundleGetInfoString</key>

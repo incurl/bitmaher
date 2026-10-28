@@ -486,6 +486,9 @@ func (m *Manager) Stop(ctx context.Context) error {
 	waitDone := m.waitDone
 	m.ready = false
 	m.client = nil
+	// The sidecar is gone, so the manager must not believe that one is
+	// running: a restart after a stop has to be able to start it.
+	m.cmd = nil
 	m.mu.Unlock()
 
 	if client != nil {
@@ -514,6 +517,26 @@ func (m *Manager) Stop(ctx context.Context) error {
 	// It is still there, so it is signalled.
 	m.log.Warn("aria2", "the sidecar did not stop in time, it is being signalled")
 	return m.stopProcess()
+}
+
+// Restart stops the sidecar and starts it again.
+//
+// It is what the interface asks for when the engine has to be brought
+// back after something went wrong. The watchdog is stopped first, so
+// that it does not start a second sidecar behind the caller's back.
+func (m *Manager) Restart(ctx context.Context) error {
+	m.stopWatchdog()
+
+	if err := m.Stop(ctx); err != nil {
+		return err
+	}
+
+	if _, err := m.start(ctx); err != nil {
+		return err
+	}
+
+	m.startWatchdog()
+	return nil
 }
 
 // stopProcess signals the sidecar and waits for it to go.

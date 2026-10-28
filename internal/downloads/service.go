@@ -104,6 +104,38 @@ func (s *Service) Store() *Store {
 	return s.store
 }
 
+// Rename changes the name of a finished download.
+//
+// The file on the disk has already been renamed by the caller: this
+// updates the record, so that the list shows the new name and the
+// engine is told where the file went.
+func (s *Service) Rename(gid, name, path string) error {
+	job, err := s.store.Get(gid)
+	if err != nil {
+		return err
+	}
+
+	job.Title = name
+	if job.Options == nil {
+		job.Options = map[string]string{}
+	}
+	job.Options["out"] = name
+
+	// The engine is told where the file is, so that it keeps the
+	// download in step with what is on the disk.
+	if client := s.manager.Client(); client != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		if err := client.ChangeOption(ctx, job.GID, map[string]string{"out": name}); err != nil {
+			s.warn("the engine could not be told about the new name: " + err.Error())
+		}
+	}
+
+	_, err = s.store.Save(job)
+	return err
+}
+
 // Manager returns the manager of the sidecar.
 //
 // It is exposed so that the binding layer can report the state of the

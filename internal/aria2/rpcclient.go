@@ -71,6 +71,28 @@ const (
 	methodRemoveResult       = "aria2.removeDownloadResult"
 	methodShutdown           = "aria2.shutdown"
 	methodForceShutdown      = "aria2.forceShutdown"
+
+	// The methods Aria2-Next adds to the upstream aria2. They were
+	// verified against aria2-next 3.0.9 by asking the engine for its
+	// own list of methods: "system.listMethods".
+	methodProbe              = "aria2.probe"
+	methodInspectTorrent     = "aria2.inspectTorrent"
+	methodGetPeers           = "aria2.getPeers"
+	methodGetBtTrackers      = "aria2.getBtTrackers"
+	methodReplaceBtTrackers  = "aria2.replaceBtTrackers"
+	methodReplaceBtWebSeeds  = "aria2.replaceBtWebSeeds"
+	methodAddBtPeers         = "aria2.addBtPeers"
+	methodForceBtRecheck     = "aria2.forceBtRecheck"
+	methodChangeURI          = "aria2.changeUri"
+	methodResolveFilename    = "aria2.resolveFilename"
+	methodGetOption          = "aria2.getOption"
+	methodGetUris            = "aria2.getUris"
+	methodGetSessionInfo     = "aria2.getSessionInfo"
+	methodSaveSession        = "aria2.saveSession"
+	methodSetBtPeerBlocklist = "aria2.setBtPeerBlocklist"
+	methodGetBtSessionStatus = "aria2.getBtSessionStatus"
+	methodForceBtAnnounce    = "aria2.forceBtAnnounce"
+	methodMoveDownload       = "aria2.moveDownload"
 )
 
 // DefaultTimeout is how long a single RPC call may take.

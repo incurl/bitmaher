@@ -3,11 +3,15 @@ package bindings
 import (
 	"fmt"
 	"math"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
+
+	"github.com/incurl/bitmaher/internal/aria2"
 
 	"github.com/incurl/bitmaher/internal/pocketbase"
 )
@@ -406,4 +410,55 @@ func freeSpace(path string) (int64, error) {
 	}
 
 	return freeSpaceOn(directory)
+}
+
+// engineClient returns the client of the download engine.
+//
+// It is nil when the engine is not running, which is what a call that
+// needs the engine answers with.
+func (s *AppService) engineClient() *aria2.Client {
+	if s == nil || s.downloads == nil {
+		return nil
+	}
+	manager := s.downloads.Manager()
+	if manager == nil {
+		return nil
+	}
+	return manager.Client()
+}
+
+// urlEncode encodes a string for a header.
+//
+// The name of a file goes into the content disposition of the probe,
+// and it has to be encoded the way the specification says.
+func urlEncode(value string) string {
+	encoded := url.QueryEscape(value)
+	// The spaces are the ones the specification wants, and not the
+	// plus signs of a query.
+	return strings.ReplaceAll(encoded, "+", "%20")
+}
+
+// parseInt64 reads a number the engine reported as a string.
+func parseInt64(value string) (int64, error) {
+	return strconv.ParseInt(strings.TrimSpace(value), 10, 64)
+}
+
+// engineManager returns the manager of the sidecar.
+//
+// It is nil when there is no engine to manage.
+func (s *AppService) engineManager() *aria2.Manager {
+	if s == nil || s.downloads == nil {
+		return nil
+	}
+	return s.downloads.Manager()
+}
+
+// appleScriptString quotes a string for AppleScript.
+//
+// The text of a notification goes into a script, and the quotes and the
+// backslashes of the text have to be escaped.
+func appleScriptString(value string) string {
+	escaped := strings.ReplaceAll(value, `\`, `\\`)
+	escaped = strings.ReplaceAll(escaped, `"`, `\"`)
+	return `"` + escaped + `"`
 }

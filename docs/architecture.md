@@ -81,6 +81,32 @@ domain.
   This mirrors Rayburst, whose Rust backend pushes the same event. The engine itself pushes nothing — there is no
   `aria2.onDownloadStart` and no notification of a download that moved — so the pump is what turns the polling into a push.
 
+## The backend answers the commands of the port
+
+The interface is a port of Rayburst, and Rayburst's frontend calls the
+Tauri commands of its Rust backend. BitMaher's backend is Go, so the
+commands are answered by the `AppService` and mapped in
+`frontend/src/platform/commands.ts`.
+
+The commands that belong to a download manager are implemented: the file
+system, the categories, the preview, the state of the files on the
+disk, the recovery of the engine, the notifications, the BitTorrent
+peer blocklist and the remote files.
+
+The rest — the tray, the float window, the updater, the protocol
+handler, the browser extension — answer with the neutral value. They
+belong to features BitMaher does not have, and the components that call
+them stay inert.
+
+The categories are the ones Rayburst uses. The rules are in
+`internal/downloads/category`, and the tests are the ones Rayburst
+wrote for its own rules: the same download is classified the same way
+by both applications.
+
+The preview asks the engine. Aria2-Next has `aria2.probe`, which
+answers with the size and the name a download would get, and the
+backend uses it instead of making a request of its own.
+
 ## The secrets are write-only
 
 PocketBase has no generic secret-encryption facility, so `internal/pocketbase/crypto.go` provides one: AES-256-GCM with a key

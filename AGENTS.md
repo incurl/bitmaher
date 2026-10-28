@@ -113,6 +113,7 @@ go test -race ./internal/... .
 go run ./tools/e2e-check         # the whole pipeline, with a real sidecar
 go run ./tools/pump-check        # the pump publishes the snapshots, with a real sidecar
 go run ./tools/zoom-check        # the window carries the zoom of the interface
+go run ./tools/commands-check    # the commands the port added, with a real sidecar
 go run ./tools/restart-check     # a download survives a restart
 go run ./tools/watchdog-check    # a crashed sidecar is started again
 go run ./tools/bundled-check     # the embedded binary is found and run
@@ -158,6 +159,36 @@ through their namespace: `common:generate:bindings`, `common:fetch:aria2`, `comm
 | A panel or the layout | `frontend/src/features/`, `frontend/src/app/App.tsx`, `frontend/src/styles.css` | `npm run typecheck && npm test` |
 | The bundled engine version | `build/Taskfile.yml` (`ARIA2_VERSION`), `internal/aria2/binary.go` (`aria2Version`) | `wails3 task common:fetch:aria2` and `go run ./tools/bundled-check` |
 | A dependency | `frontend/package.json` or `go.mod` | `python3 tools/license-audit.py` |
+
+## The Commands of the Port
+
+The ported frontend calls the Tauri commands of Rayburst by name. The
+Go backend answers the ones that belong to a download manager, and the
+rest answer with the neutral value, so that the components that call
+them stay inert.
+
+What the backend answers:
+
+| Area | The commands |
+| --- | --- |
+| The files | `check_path_is_dir`, `delete_path`, `list_dir_files`, `rename_completed_file`, `read_local_file`, `write_local_file` |
+| The categories | `resolve_file_category`, `validate_file_categories` |
+| The preview | `preview_download`, `cancel_download_preview` |
+| The state of the files | `task_file_states` |
+| The engine | `engine_recover_runtime_state`, `engine_cancel`, `engine_supervisor_state` |
+| The notifications | `send_app_system_notification`, `notification_access_state`, `open_notification_settings` |
+| The BitTorrent blocklist | `get_bt_peer_blocklist_status`, `sync_bt_peer_blocklist`, `reconcile_bt_peer_blocklist` |
+| The remote files | `fetch_remote_bytes`, `preview_site_rules` |
+| The application | `set_app_log_level`, `export_diagnostic_logs`, `factory_reset`, `database_reset` |
+
+The categories are the ones Rayburst uses, so that the two
+applications classify a download the same way. The rules are in
+`internal/downloads/category`, and the tests are the ones Rayburst
+wrote for its own rules.
+
+The preview asks the engine: `aria2.probe` is what the engine has
+instead of a request of its own, and it answers with the size and the
+name a download would get.
 
 ## The Platform Layer
 

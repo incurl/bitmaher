@@ -128,6 +128,116 @@ export function resolveCommand(
     case 'get_engine_conf_path':
       return { method: APP_SERVICE + '.PlatformPaths', args: [] };
 
+    // --- the file system -------------------------------------------------
+    case 'check_path_is_dir':
+      return { method: APP_SERVICE + '.PathIsDirectory', args: [stringOf(args, 'path')] };
+    case 'delete_path':
+      return {
+        method: APP_SERVICE + '.DeletePath',
+        args: [stringOf(args, 'path'), stringOf(args, 'mode')],
+      };
+    case 'list_dir_files':
+      return { method: APP_SERVICE + '.ListDirectoryFiles', args: [stringOf(args, 'path')] };
+    case 'rename_completed_file':
+      return {
+        method: APP_SERVICE + '.RenameCompletedFile',
+        args: [stringOf(args, 'gid'), stringOf(args, 'name')],
+      };
+
+    // --- the categories ---------------------------------------------------
+    case 'resolve_file_category':
+      return {
+        method: APP_SERVICE + '.ResolveFileCategory',
+        args: [args.candidates ?? [], args.categories ?? [], stringOf(args, 'baseDir')],
+      };
+    case 'validate_file_categories':
+      return {
+        method: APP_SERVICE + '.ValidateFileCategories',
+        args: [args.categories ?? [], stringOf(args, 'baseDir')],
+      };
+
+    // --- the preview ------------------------------------------------------
+    case 'preview_download':
+      return { method: APP_SERVICE + '.PreviewDownload', args: [args.request ?? {}] };
+    case 'cancel_download_preview':
+      return { method: APP_SERVICE + '.CancelDownloadPreview', args: [stringOf(args, 'id')] };
+
+    // --- the state of the files -------------------------------------------
+    case 'task_file_states':
+      return { method: APP_SERVICE + '.TaskFileStates', args: [stringsOf(args, 'gids')] };
+
+    // --- the engine --------------------------------------------------------
+    case 'engine_recover_runtime_state':
+      return { method: APP_SERVICE + '.EngineRecoverRuntimeState', args: [] };
+    case 'engine_cancel':
+      return { method: APP_SERVICE + '.EngineCancel', args: [] };
+
+    // --- the notifications --------------------------------------------------
+    case 'send_app_system_notification':
+      return {
+        method: APP_SERVICE + '.SendAppSystemNotification',
+        args: [stringOf(args, 'title'), stringOf(args, 'body')],
+      };
+    case 'notification_access_state':
+      return { method: APP_SERVICE + '.NotificationAccessState', args: [] };
+    case 'open_notification_settings':
+      return { method: APP_SERVICE + '.OpenNotificationSettings', args: [] };
+    case 'open_default_apps_settings':
+      return { method: APP_SERVICE + '.OpenDefaultAppsSettings', args: [] };
+
+    // --- the application ----------------------------------------------------
+    case 'set_app_log_level':
+      return { method: APP_SERVICE + '.SetAppLogLevel', args: [stringOf(args, 'level')] };
+    case 'export_diagnostic_logs':
+      return { method: APP_SERVICE + '.ExportDiagnosticLogs', args: [stringOf(args, 'target')] };
+    case 'factory_reset':
+      return { method: APP_SERVICE + '.FactoryReset', args: [] };
+    case 'database_reset':
+      return { method: APP_SERVICE + '.DatabaseReset', args: [] };
+
+    // --- the paths and the files ---------------------------------------------
+    case 'platform_paths':
+      return { method: APP_SERVICE + '.PlatformPaths', args: [] };
+    case 'read_local_file':
+      return { method: APP_SERVICE + '.ReadLocalFile', args: [stringOf(args, 'path')] };
+    case 'write_local_file':
+      return {
+        method: APP_SERVICE + '.WriteLocalFile',
+        args: [stringOf(args, 'path'), stringOf(args, 'contents')],
+      };
+    case 'open_external_url':
+      return { method: APP_SERVICE + '.OpenExternalURL', args: [stringOf(args, 'url')] };
+
+    // --- the identity of the application ---------------------------------------
+    case 'app_name':
+      return { method: APP_SERVICE + '.AppName', args: [] };
+    case 'app_version':
+      return { method: APP_SERVICE + '.AppVersion', args: [] };
+
+    // --- the peer blocklist --------------------------------------------------
+    case 'get_bt_peer_blocklist_status':
+      return { method: APP_SERVICE + '.GetBtPeerBlocklistStatus', args: [] };
+    case 'sync_bt_peer_blocklist':
+      return { method: APP_SERVICE + '.SyncBtPeerBlocklist', args: [] };
+    case 'reconcile_bt_peer_blocklist':
+      return { method: APP_SERVICE + '.ReconcileBtPeerBlocklist', args: [] };
+
+    // --- the remote files ------------------------------------------------------
+    case 'fetch_remote_bytes':
+      return {
+        method: APP_SERVICE + '.FetchRemoteBytes',
+        args: [
+          stringOf(args, 'url'),
+          nullableString(args, 'proxy'),
+          nullableString(args, 'referer'),
+          nullableString(args, 'cookie'),
+          nullableString(args, 'userAgent'),
+          args.requestHeaders ?? [],
+        ],
+      };
+    case 'preview_site_rules':
+      return { method: APP_SERVICE + '.PreviewSiteRules', args: [stringsOf(args, 'uris')] };
+
     // --- the features BitMaher does not have --------------------------------
     // These belong to the tray, the float window, the updater, the
     // protocol handler and the browser extension. They answer with a
@@ -170,6 +280,13 @@ function stringOf(args: Record<string, unknown>, key: string): string {
 function nullableString(args: Record<string, unknown>, key: string): string | null {
   const value = args[key];
   return typeof value === 'string' ? value : null;
+}
+
+/** Reads an array of strings. */
+function stringsOf(args: Record<string, unknown>, key: string): string[] {
+  const value = args[key];
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === 'string');
 }
 
 /** Reads an array of numbers. */

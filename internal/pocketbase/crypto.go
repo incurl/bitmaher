@@ -17,7 +17,7 @@ import (
 // secrets before they are written to the app_settings collection.
 //
 // PocketBase provides no generic secret-encryption facility, so
-// Valkyrie stores an encrypted envelope in the record. The key never
+// BitMaher stores an encrypted envelope in the record. The key never
 // leaves the machine: it is generated on first run and kept in a 0600
 // file inside the data directory.
 type Cipher struct {
@@ -27,7 +27,7 @@ type Cipher struct {
 }
 
 // keyFileName is the name of the file holding the local encryption key.
-const keyFileName = ".valkyrie_key"
+const keyFileName = ".bitmaher_key"
 
 // NewCipher loads the encryption key from dataDir, creating it on first
 // use.

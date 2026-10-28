@@ -3,11 +3,13 @@ package pocketbase
 import (
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/pocketbase/pocketbase/core"
 )
 
-// Setting keys used by Valkyrie.
+// Setting keys used by BitMaher.
 //
 // The scaffold defines a generic set. Applications are expected to add
 // their own keys, keeping the "app.<name>" convention.
@@ -19,6 +21,15 @@ const (
 	SettingAPIKey = "app.api_key"
 	// SettingBaseURL holds the base URL of the remote API.
 	SettingBaseURL = "app.base_url"
+	// SettingAria2 holds the Aria2-Next settings.
+	SettingAria2 = "app.aria2"
+	// SettingAria2Secret holds the encrypted RPC secret of the
+	// sidecar.
+	//
+	// The secret is what the engine authenticates the caller with. It
+	// is generated once, on the first run, and never leaves the
+	// machine.
+	SettingAria2Secret = "app.aria2_rpc_secret"
 )
 
 // UI holds the user interface preferences.
@@ -243,3 +254,102 @@ func (s *SettingsStore) GetBaseURL() (string, error) {
 // It points at a placeholder host on purpose: an application that talks
 // to a real API replaces it with its own default.
 const DefaultBaseURL = "https://api.example.com"
+
+// Aria2 holds the settings of the Aria2-Next sidecar.
+//
+// The RPC secret is not part of it: the secret is a secret, and it is
+// stored encrypted under its own key.
+type Aria2 struct {
+	// DownloadDir is the directory the downloads are written to.
+	DownloadDir string `json:"download_dir"`
+	// MaxDownloadSpeed is the global download limit in bytes per
+	// second. Zero means no limit.
+	MaxDownloadSpeed int64 `json:"max_download_speed"`
+	// MaxUploadSpeed is the global upload limit in bytes per second.
+	// Zero means no limit.
+	MaxUploadSpeed int64 `json:"max_upload_speed"`
+	// UseExternalBinary asks for a system-installed aria2-next
+	// instead of the bundled one.
+	UseExternalBinary bool `json:"use_external_binary"`
+	// ExternalBinaryPath is where the system-installed aria2-next
+	// lives.
+	ExternalBinaryPath string `json:"external_binary_path"`
+	// AutoRestart is whether a crashed sidecar is started again.
+	AutoRestart bool `json:"auto_restart"`
+	// LogLevel is the console log level of the engine.
+	LogLevel string `json:"log_level"`
+}
+
+// DefaultAria2 returns the factory Aria2 settings.
+func DefaultAria2() Aria2 {
+	return Aria2{
+		DownloadDir:        defaultDownloadDir(),
+		MaxDownloadSpeed:   0,
+		MaxUploadSpeed:     0,
+		UseExternalBinary:  false,
+		ExternalBinaryPath: "",
+		AutoRestart:        true,
+		LogLevel:           "warn",
+	}
+}
+
+// defaultDownloadDir returns the default download directory.
+//
+// It is the user's home directory, which is where a download belongs
+// unless the user says otherwise.
+func defaultDownloadDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return "."
+	}
+	return filepath.Join(home, "Downloads")
+}
+
+// SetAria2 stores the Aria2 settings.
+func (s *SettingsStore) SetAria2(settings Aria2) error {
+	return s.setValue(SettingAria2, settings, false)
+}
+
+// GetAria2 returns the Aria2 settings, falling back to the factory
+// defaults.
+func (s *SettingsStore) GetAria2() (Aria2, error) {
+	settings := DefaultAria2()
+	found, err := s.getValue(SettingAria2, false, &settings)
+	if err != nil {
+		return DefaultAria2(), err
+	}
+	if !found {
+		return DefaultAria2(), nil
+	}
+	if settings.DownloadDir == "" {
+		settings.DownloadDir = DefaultAria2().DownloadDir
+	}
+	if settings.LogLevel == "" {
+		settings.LogLevel = DefaultAria2().LogLevel
+	}
+	return settings, nil
+}
+
+// SetAria2Secret stores the RPC secret encrypted.
+//
+// The secret is the engine's authentication, so it is never returned
+// to the frontend: the Go backend is the only reader.
+func (s *SettingsStore) SetAria2Secret(secret string) error {
+	return s.setValue(SettingAria2Secret, secret, true)
+}
+
+// GetAria2Secret returns the decrypted RPC secret.
+//
+// The second return value reports whether a secret was configured. A
+// missing secret means the first run, and the caller generates one.
+func (s *SettingsStore) GetAria2Secret() (string, bool, error) {
+	var secret string
+	found, err := s.getValue(SettingAria2Secret, true, &secret)
+	if err != nil {
+		return "", false, err
+	}
+	if !found || secret == "" {
+		return "", false, nil
+	}
+	return secret, true, nil
+}

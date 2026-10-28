@@ -185,3 +185,83 @@ func TestCallIsNumbered(t *testing.T) {
 		t.Errorf("calls = %d, want 3", stub.calls)
 	}
 }
+
+// TestAddTorrentSendsTheURIsSlot verifies the shape of the addTorrent
+// parameters.
+//
+// The engine takes the torrent, then the webseed URIs, then the
+// options. This is not the order addUri uses, and getting it wrong is
+// reported as "The parameter at 1 has wrong type" rather than as
+// anything that names the problem. The regression is easy to
+// reintroduce, so the shape is pinned here.
+func TestAddTorrentSendsTheURIsSlot(t *testing.T) {
+	stub := newStubServer(t, `{"jsonrpc":"2.0","id":"1","result":"abc123"}`)
+	client := NewClient(stub.URL, "token")
+
+	gid, err := client.AddTorrent(
+		context.Background(),
+		"ZDQ6aW5mb2Q0Om5hbWUxOmFl",
+		map[string]string{"dir": "/downloads"},
+	)
+	if err != nil {
+		t.Fatalf("add torrent: %v", err)
+	}
+	if gid != "abc123" {
+		t.Errorf("gid = %q", gid)
+	}
+
+	params, ok := stub.lastRequest["params"].([]any)
+	if !ok {
+		t.Fatalf("the request carries no parameters: %v", stub.lastRequest)
+	}
+
+	// The token, the torrent, the URIs and the options.
+	if len(params) != 4 {
+		t.Fatalf("%d parameters, want 4: %v", len(params), params)
+	}
+	if params[0] != "token:token" {
+		t.Errorf("the first parameter is %v, want the token", params[0])
+	}
+	if _, ok := params[1].(string); !ok {
+		t.Errorf("the torrent is %T, want a string", params[1])
+	}
+	// The URIs slot has to be a list, not an object.
+	if _, ok := params[2].([]any); !ok {
+		t.Errorf("the URIs slot is %T, want a list: the engine refuses an object", params[2])
+	}
+	if _, ok := params[3].(map[string]any); !ok {
+		t.Errorf("the options are %T, want an object", params[3])
+	}
+}
+
+// TestAddURISendsTheOptionsAfterTheList verifies the shape of the
+// addUri parameters.
+//
+// Here the options come straight after the list of URIs, which is the
+// opposite of addTorrent.
+func TestAddURISendsTheOptionsAfterTheList(t *testing.T) {
+	stub := newStubServer(t, `{"jsonrpc":"2.0","id":"1","result":"abc123"}`)
+	client := NewClient(stub.URL, "token")
+
+	if _, err := client.AddURI(
+		context.Background(),
+		[]string{"https://example.test/file.zip"},
+		map[string]string{"dir": "/downloads"},
+	); err != nil {
+		t.Fatalf("add uri: %v", err)
+	}
+
+	params, ok := stub.lastRequest["params"].([]any)
+	if !ok {
+		t.Fatalf("the request carries no parameters: %v", stub.lastRequest)
+	}
+	if len(params) != 3 {
+		t.Fatalf("%d parameters, want 3: %v", len(params), params)
+	}
+	if _, ok := params[1].([]any); !ok {
+		t.Errorf("the URIs are %T, want a list", params[1])
+	}
+	if _, ok := params[2].(map[string]any); !ok {
+		t.Errorf("the options are %T, want an object", params[2])
+	}
+}

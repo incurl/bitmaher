@@ -115,6 +115,7 @@ go run ./tools/restart-check      # a download survives a restart
 go run ./tools/watchdog-check     # a crashed sidecar is started again
 go run ./tools/bundled-check      # the bundled binary is found and run
 go run ./tools/leak-check         # no sidecar outlives the application
+go run ./tools/torrent-check      # a torrent's files are listed and chosen
 
 # The frontend
 cd frontend && npm run typecheck && npm test && npm run build

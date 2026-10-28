@@ -342,7 +342,7 @@ onMounted(async () => {
             <template #trigger>
               <button
                 class="sysinfo-ver-badge"
-                @click="copyVersionToClipboard(`Rayburst v${sysAppVersion}`, 'Rayburst')"
+                @click="copyVersionToClipboard(`BitMaher v${sysAppVersion}`, 'BitMaher')"
               >
                 <span class="sysinfo-ver-value">v{{ sysAppVersion || '\u2014' }}</span>
                 <svg class="sysinfo-ver-copy" width="14" height="14" viewBox="0 0 24 24" fill="none">

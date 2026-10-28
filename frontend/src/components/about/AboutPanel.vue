@@ -1,5 +1,5 @@
 <script setup lang="ts">
-const brandLogo = '/logo.svg'
+const brandLogo = '/appicon.png'
 /** @fileoverview About panel with staggered entrance animations and glass effect. */
 import { computed, ref, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -58,10 +58,22 @@ watch(
 
 const techStack = [
   {
-    name: 'Tauri 2',
+    name: 'Wails v3',
     color: '#D49700',
     /* Lucide app-window — desktop application framework */
     svg: '<rect x="2" y="4" width="20" height="16" rx="2"/><line x1="8" y1="4" x2="8" y2="20"/>',
+  },
+  {
+    name: 'Go',
+    color: '#00ADD8',
+    /* Lucide zap — the speed of a compiled language */
+    svg: '<path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>',
+  },
+  {
+    name: 'PocketBase',
+    color: '#2A9D6E',
+    /* Lucide database — the embedded database */
+    svg: '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/>',
   },
   {
     name: 'Vue 3',
@@ -70,14 +82,8 @@ const techStack = [
     svg: '<path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.84Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/>',
   },
   {
-    name: 'Rust',
-    color: '#DE5623',
-    /* Lucide shield — memory safety */
-    svg: '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 .67-.95l7-2.5a1 1 0 0 1 .67 0l7 2.5A1 1 0 0 1 20 6z"/>',
-  },
-  {
     name: 'Naive UI',
-    color: '#2A9D6E',
+    color: '#4A9D6E',
     /* Lucide leaf — nature/green brand identity */
     svg: '<path d="M11 20A7 7 0 0 1 9.8 6.9C15.5 4.9 20 .5 20 .5s-4.5 4.5-2.5 10.2A7 7 0 0 1 11 20"/><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/>',
   },
@@ -88,25 +94,25 @@ const links = computed(() => [
     key: 'website',
     label: t('about.website'),
     icon: GlobeOutline,
-    url: 'https://rayburst.pages.dev/',
+    url: 'https://github.com/incurl/bitmaher',
   },
   {
     key: 'github',
     label: 'GitHub',
     icon: LogoGithub,
-    url: 'https://github.com/AnInsomniacy/rayburst',
+    url: 'https://github.com/incurl/bitmaher',
   },
   {
     key: 'release',
     label: t('about.release'),
     icon: RocketOutline,
-    url: 'https://github.com/AnInsomniacy/rayburst/releases',
+    url: 'https://github.com/incurl/bitmaher/releases',
   },
   {
     key: 'support',
     label: t('about.support'),
     icon: HeartOutline,
-    url: 'https://github.com/AnInsomniacy/AnInsomniacy/blob/main/SPONSOR.md',
+    url: 'https://github.com/incurl/bitmaher/issues',
   },
 ])
 
@@ -144,17 +150,17 @@ function openUrl(url: string) {
 
       <!-- Logo -->
       <div class="about-logo stagger stagger-1">
-        <img :src="brandLogo" alt="Rayburst" width="96" height="96" />
+        <img :src="brandLogo" alt="BitMaher" width="96" height="96" />
       </div>
 
       <!-- Title -->
-      <div class="about-title stagger stagger-2">Rayburst</div>
+      <div class="about-title stagger stagger-2">BitMaher</div>
 
       <!-- Version Badges (stacked, prominent) -->
       <div class="about-versions stagger stagger-2">
         <MTooltip>
           <template #trigger>
-            <button class="version-badge" @click="copyToClipboard(`Rayburst v${appVersion}`, 'Rayburst')">
+            <button class="version-badge" @click="copyToClipboard(`BitMaher v${appVersion}`, 'BitMaher')">
               <span class="version-label">{{ t('about.app-version') }}</span>
               <span class="version-value">v{{ appVersion }}</span>
               <svg class="copy-icon" width="14" height="14" viewBox="0 0 24 24" fill="none">
@@ -242,15 +248,15 @@ function openUrl(url: string) {
       <div class="about-footer stagger stagger-6">
         <i18n-t keypath="about.developed-by" tag="span" scope="global">
           <template #author>
-            <a class="about-link" @click="openUrl('https://github.com/AnInsomniacy')">AnInsomniacy</a>
+            <a class="about-link" @click="openUrl('https://github.com/incurl')">incurl</a>
           </template>
         </i18n-t>
         <div class="about-legal">
-          <span>&copy; {{ year }} AnInsomniacy</span>
+          <span>&copy; {{ year }} incurl</span>
           <a
             class="about-link"
-            href="https://github.com/AnInsomniacy/rayburst/blob/main/LICENSE"
-            @click.prevent="openUrl('https://github.com/AnInsomniacy/rayburst/blob/main/LICENSE')"
+            href="https://github.com/incurl/bitmaher/blob/main/LICENSE"
+            @click.prevent="openUrl('https://github.com/incurl/bitmaher/blob/main/LICENSE')"
             >{{ t('about.license') }}</a
           >
         </div>

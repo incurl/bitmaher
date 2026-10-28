@@ -2,6 +2,7 @@ package bindings
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -174,10 +175,18 @@ func (s *AppService) UnsupportedCommand(command string) {
 	s.console.Warn("frontend", "the command is not supported by this backend: "+command)
 }
 
+// The key the preferences are stored under.
+//
+// The ported frontend keeps its whole configuration in one value of a
+// key-value store, under this name.
+const storePreferencesKey = "preferences"
+
 // StoreRead returns the values of a store.
 //
-// The preferences of Rayburst live in a JSON file. BitMaher keeps them
-// in PocketBase, so the store is a view onto the settings record.
+// The preferences of the ported frontend live in a JSON file. BitMaher
+// keeps them in PocketBase, so the store is a view onto the settings
+// record: the interface preferences are the ones the backend owns, and
+// the rest of the configuration is returned as it was given.
 func (s *AppService) StoreRead(name string) (map[string]any, error) {
 	ui, err := s.settings.GetUI()
 	if err != nil {
@@ -185,7 +194,10 @@ func (s *AppService) StoreRead(name string) (map[string]any, error) {
 	}
 
 	return map[string]any{
-		"ui": ui,
+		storePreferencesKey: map[string]any{
+			"uiScale": float64(ui.Zoom) / 100,
+			"theme":   ui.Theme,
+		},
 	}, nil
 }
 
@@ -200,17 +212,17 @@ func (s *AppService) StoreReadValue(name, key string) (any, error) {
 
 // StoreWrite writes one value of a store.
 //
-// Only the interface preferences are stored. The values that have no
-// counterpart are accepted and dropped, so that the ported code does
-// not have to know which ones they are.
+// The interface preferences are the ones the backend owns: the size of
+// the interface and the colour scheme. The rest of the configuration is
+// accepted and dropped, because the backend has no place for it yet.
 func (s *AppService) StoreWrite(name, key string, value any) error {
-	if key != "ui" {
+	if key != storePreferencesKey {
 		return nil
 	}
 
-	ui, ok := value.(map[string]any)
+	values, ok := value.(map[string]any)
 	if !ok {
-		return fmt.Errorf("the value of the ui key is not a record")
+		return fmt.Errorf("the value of the preferences key is not a record")
 	}
 
 	settings, err := s.settings.GetUI()
@@ -218,11 +230,52 @@ func (s *AppService) StoreWrite(name, key string, value any) error {
 		return err
 	}
 
-	updated, err := mergeUI(settings, ui)
+	updated, err := mergeUI(settings, values)
 	if err != nil {
 		return err
 	}
-	return s.settings.SetUI(updated)
+
+	if err := s.settings.SetUI(updated); err != nil {
+		return err
+	}
+
+	// The size of the interface is the zoom of the window, so the
+	// change is applied at once. The user sees the interface grow or
+	// shrink while the slider is still moving.
+	s.applyZoom(updated.Zoom)
+
+	return nil
+}
+
+// RefreshRuntimeConfig applies the stored preferences to the window.
+//
+// The frontend calls it after it has changed a preference, so that the
+// change is visible at once. The size of the interface is the only
+// preference the backend applies to the window.
+func (s *AppService) RefreshRuntimeConfig() error {
+	if s == nil {
+		return nil
+	}
+
+	ui, err := s.settings.GetUI()
+	if err != nil {
+		return err
+	}
+
+	s.applyZoom(ui.Zoom)
+	return nil
+}
+
+// applyZoom sets the zoom of the window.
+//
+// The zoom is the magnification of the page. The interface is laid out
+// in `rem`, so the whole interface follows it, text included.
+func (s *AppService) applyZoom(percent int) {
+	if s == nil || s.window == nil || percent <= 0 {
+		return
+	}
+
+	s.window.SetZoom(float64(percent) / 100)
 }
 
 // StoreDelete removes one value of a store.
@@ -237,18 +290,29 @@ func (s *AppService) StoreClear(name string) error {
 
 // StoreKeys returns the keys of a store.
 func (s *AppService) StoreKeys(name string) ([]string, error) {
-	return []string{"ui"}, nil
+	return []string{storePreferencesKey}, nil
 }
 
 // mergeUI folds the values of the frontend into the stored preferences.
 //
 // The frontend sends the whole record, so only the keys it knows about
 // are taken. The rest are kept as they are.
+//
+// The size of the interface is a factor in the frontend and a
+// percentage in the backend, because the setting is the one a person
+// reads: "110%" means something, "1.1" does not.
 func mergeUI(current pocketbase.UI, values map[string]any) (pocketbase.UI, error) {
 	updated := current
 
-	if zoom, ok := values["zoom"].(float64); ok {
-		updated.Zoom = int(zoom)
+	if scale, ok := values["uiScale"].(float64); ok {
+		zoom := int(math.Round(scale * 100))
+		if zoom < minZoom {
+			zoom = minZoom
+		}
+		if zoom > maxZoom {
+			zoom = maxZoom
+		}
+		updated.Zoom = zoom
 	}
 	if theme, ok := values["theme"].(string); ok {
 		updated.Theme = theme
@@ -256,6 +320,15 @@ func mergeUI(current pocketbase.UI, values map[string]any) (pocketbase.UI, error
 
 	return updated, nil
 }
+
+// The bounds of the size of the interface, as a percentage.
+//
+// They are the bounds the settings declare, so that the backend and the
+// interface agree on what is possible.
+const (
+	minZoom = 50
+	maxZoom = 200
+)
 
 // EngineState is the state of the download engine.
 //

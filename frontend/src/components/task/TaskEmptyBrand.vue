@@ -28,7 +28,7 @@ defineProps<{ show: boolean }>()
   aspect-ratio: 1;
   background: color-mix(in srgb, var(--m3-on-surface-variant) 85%, var(--m3-primary));
   opacity: 0.12;
-  mask: url('/logo.svg') center / contain no-repeat;
+  mask: url('/appicon.png') center / contain no-repeat;
   mask-mode: alpha;
 }
 .empty-brand-enter-active {

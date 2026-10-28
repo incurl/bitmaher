@@ -34,6 +34,7 @@ var expectedMethods = []string{
 	"PlatformPaths",
 	"PurgeDownloads",
 	"ReadLocalFile",
+	"RefreshRuntimeConfig",
 	"RemoveDownload",
 	"ResumeDownload",
 	"SaveAria2",

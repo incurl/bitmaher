@@ -5,7 +5,7 @@
  * from the window module, because the two are mocked apart in the
  * tests.
  */
-import { Events } from '@wailsio/runtime';
+import { Window } from '@wailsio/runtime';
 import { listen as listenEvent, type UnlistenFn } from './event';
 import type { DragDropEvent } from './window';
 
@@ -16,13 +16,20 @@ export function getCurrentWebview() {
     onDragDropEvent(handler: (event: DragDropEvent) => void): Promise<UnlistenFn> {
       return listenEvent<DragDropEvent>('webview:drag-drop', (event) => handler(event.payload));
     },
-    /** Sets the zoom of the webview. */
+    /**
+     * Sets the zoom of the webview.
+     *
+     * The zoom is the magnification of the page: the interface is laid
+     * out in `rem`, so scaling the root font size would do the same.
+     * The webview's own zoom is used instead, because it scales the
+     * text with it, and it is what the platform expects.
+     */
     async setZoom(factor: number): Promise<void> {
-      await Events.Emit('webview:set-zoom' as never, factor as never);
+      await Window.SetZoom(factor);
     },
     /** The zoom of the webview. */
     async zoomFactor(): Promise<number> {
-      return window.devicePixelRatio;
+      return Window.GetZoom();
     },
   };
 }

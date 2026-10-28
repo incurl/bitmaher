@@ -23,7 +23,7 @@ import banner from '@/assets/extension-banner.webp'
 
 defineProps<{ show: boolean }>()
 const emit = defineEmits<{ close: [] }>()
-const brandLogo = '/logo.svg'
+const brandLogo = '/appicon.png'
 const { t } = useI18n()
 const router = useRouter()
 const message = useAppMessage()

@@ -178,7 +178,15 @@ func run() error {
 	enginePump.SetEmitter(bridge)
 	enginePump.Start()
 
-	app.Window.NewWithOptions(application.WebviewWindowOptions{
+	// The size of the interface is the zoom of the webview. It is read
+	// before the window is created, so that the interface appears at the
+	// size the user chose, and not at the default one.
+	zoom := 1.0
+	if ui, err := settings.GetUI(); err == nil && ui.Zoom > 0 {
+		zoom = float64(ui.Zoom) / 100
+	}
+
+	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:  bindings.AppName,
 		Width:  1440,
 		Height: 900,
@@ -189,7 +197,12 @@ func run() error {
 		},
 		BackgroundColour: application.NewRGB(6, 7, 15),
 		URL:              "/",
+		Zoom:             zoom,
 	})
+
+	// The service applies the size of the interface when the user
+	// changes it, so that the setting is kept in one place.
+	bindings.SetWindow(appService, window)
 
 	return app.Run()
 }

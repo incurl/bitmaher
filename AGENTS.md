@@ -112,6 +112,7 @@ go test -race ./internal/... .
 # The live checks, against a real engine
 go run ./tools/e2e-check         # the whole pipeline, with a real sidecar
 go run ./tools/pump-check        # the pump publishes the snapshots, with a real sidecar
+go run ./tools/zoom-check        # the window carries the zoom of the interface
 go run ./tools/restart-check     # a download survives a restart
 go run ./tools/watchdog-check    # a crashed sidecar is started again
 go run ./tools/bundled-check     # the embedded binary is found and run
@@ -172,6 +173,31 @@ Wails runtime, and the Vite aliases point `@tauri-apps/*` at it. Three rules fol
 
 A component that needs a new backend operation gets a method on `AppService`, the bindings are regenerated, and the command
 map gains an entry.
+
+## The Header and the Size of the Interface
+
+Two things belong to BitMaher rather than to the port, and they are the
+first things to keep when the interface changes.
+
+**The header** (`frontend/src/components/layout/AppHeader.vue`) is the
+band across the top: the application's icon, its name, the speed of all
+the downloads together, and the two controls that are not about the
+downloads. It is a grid row of its own, so the layout below it shifts by
+one row when it appears.
+
+**The size of the interface** is the zoom of the webview. The frontend
+holds it as a factor (`uiScale`), the backend stores it as a percentage
+(`ui.Zoom`), and the store is where the two meet:
+
+- the frontend applies it with `Window.SetZoom`, through the platform
+  layer's `setZoom`;
+- the backend applies it too, when the setting is written, so that the
+  change shows at once while the user moves the slider;
+- the backend reads it at start-up, so the interface appears at the size
+  the user chose.
+
+Every size in the stylesheet is in `rem`, so the zoom scales the whole
+interface, text included.
 
 ## Frontend Conventions
 

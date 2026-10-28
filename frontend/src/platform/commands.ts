@@ -93,6 +93,41 @@ export function resolveCommand(
     case 'clear_log_file':
       return { method: APP_SERVICE + '.ClearConsoleEntries', args: [] };
 
+    // --- the preferences --------------------------------------------------
+    // The ported frontend keeps its configuration in a key-value store.
+    // The backend owns the interface preferences, so the store is a view
+    // onto the settings record.
+    case 'store_read':
+      return { method: APP_SERVICE + '.StoreRead', args: [stringOf(args, 'name')] };
+    case 'store_read_value':
+      return {
+        method: APP_SERVICE + '.StoreReadValue',
+        args: [stringOf(args, 'name'), stringOf(args, 'key')],
+      };
+    case 'store_write':
+      return {
+        method: APP_SERVICE + '.StoreWrite',
+        args: [stringOf(args, 'name'), stringOf(args, 'key'), args.value],
+      };
+    case 'store_delete':
+      return {
+        method: APP_SERVICE + '.StoreDelete',
+        args: [stringOf(args, 'name'), stringOf(args, 'key')],
+      };
+    case 'store_clear':
+      return { method: APP_SERVICE + '.StoreClear', args: [stringOf(args, 'name')] };
+    case 'store_keys':
+      return { method: APP_SERVICE + '.StoreKeys', args: [stringOf(args, 'name')] };
+
+    // --- the preferences the backend owns -----------------------------------
+    case 'refresh_runtime_config':
+      // The backend applies the stored preferences to the window.
+      return { method: APP_SERVICE + '.RefreshRuntimeConfig', args: [] };
+    case 'replace_system_config':
+      return { method: APP_SERVICE + '.UnsupportedCommand', args: [command] };
+    case 'get_engine_conf_path':
+      return { method: APP_SERVICE + '.PlatformPaths', args: [] };
+
     // --- the features BitMaher does not have --------------------------------
     // These belong to the tray, the float window, the updater, the
     // protocol handler and the browser extension. They answer with a

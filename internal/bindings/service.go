@@ -10,6 +10,7 @@ import (
 	"github.com/incurl/bitmaher/internal/console"
 	"github.com/incurl/bitmaher/internal/downloads"
 	"github.com/incurl/bitmaher/internal/pocketbase"
+	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 // AppService is the main Wails service. It is bound to the frontend and
@@ -27,6 +28,26 @@ type AppService struct {
 	dataDir string
 	// downloadDir is the directory the downloads go to by default.
 	downloadDir string
+	// window is the window the application runs in. It is what the size
+	// of the interface is applied to. It is set once the Wails
+	// application exists.
+	window *application.WebviewWindow
+}
+
+// SetWindow tells the service which window the application runs in.
+//
+// The window is created by the bootstrap, and the service needs it to
+// apply the size of the interface when the user changes it.
+//
+// It is a function and not a method, because a method on the service
+// would become a method of the frontend's API: the binding generator
+// exposes every exported method of a bound service, and this one is
+// not for the frontend.
+func SetWindow(service *AppService, window *application.WebviewWindow) {
+	if service == nil {
+		return
+	}
+	service.window = window
 }
 
 // NewAppService creates the application service.

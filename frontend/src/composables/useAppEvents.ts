@@ -291,10 +291,10 @@ export function useAppEvents(deps: AppEventsDeps): AppEventsReturn {
         taskStore.pauseAllTask().catch((e) => logger.error('TrayMenu', e))
         break
       case 'release-notes':
-        openUrl('https://github.com/AnInsomniacy/rayburst/releases').catch((e) => logger.error('TrayMenu', e))
+        openUrl('https://github.com/incurl/bitmaher/releases').catch((e) => logger.error('TrayMenu', e))
         break
       case 'report-issue':
-        openUrl('https://github.com/AnInsomniacy/rayburst/issues').catch((e) => logger.error('TrayMenu', e))
+        openUrl('https://github.com/incurl/bitmaher/issues').catch((e) => logger.error('TrayMenu', e))
         break
     }
   }

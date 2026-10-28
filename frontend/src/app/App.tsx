@@ -127,15 +127,6 @@ function App() {
   // --- Live updates -------------------------------------------------
 
   useEffect(() => {
-    const unsubscribe = Events.On(api.EVENT_JOB_UPDATED, () => {
-      void queryClient.invalidateQueries({ queryKey: ['jobs'] });
-    });
-    return () => {
-      unsubscribe();
-    };
-  }, [queryClient]);
-
-  useEffect(() => {
     const unsubscribe = Events.On(api.EVENT_CONSOLE_ENTRY, () => {
       void queryClient.invalidateQueries({ queryKey: ['console'] });
     });

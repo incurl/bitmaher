@@ -30,9 +30,7 @@ import (
 	"github.com/incurl/bitmaher/internal/bindings"
 	"github.com/incurl/bitmaher/internal/console"
 	"github.com/incurl/bitmaher/internal/downloads"
-	"github.com/incurl/bitmaher/internal/jobs"
 	"github.com/incurl/bitmaher/internal/pocketbase"
-	"github.com/incurl/bitmaher/internal/runner"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
@@ -43,11 +41,8 @@ import (
 var assets embed.FS
 
 func init() {
-	// Register the job update event so the binding generator produces a
-	// strongly typed TS API for it.
-	application.RegisterEvent[jobs.Job]("job:updated")
-
-	// The debug console entry event, likewise.
+	// Register the console entry event so the binding generator produces
+	// a strongly typed TS API for it.
 	application.RegisterEvent[console.Entry]("console:entry")
 }
 
@@ -101,29 +96,7 @@ func run() error {
 	// step with it.
 	downloadService := downloads.NewService(sidecar, downloads.NewStore(pbService.App()), consoleLog)
 
-	// The job manager delegates the work to the registered runner. The
-	// scaffold ships an echo runner, which is replaced by your own.
-	jobManager := jobs.NewManager(
-		pbService.App(),
-		jobs.WithLog(consoleLog),
-		jobs.WithRunnerFunc(func() jobs.Runner {
-			return runner.NewEcho(settings, consoleLog)
-		}),
-	)
-
-	// A job that was running when the application last closed was
-	// never finished and never failed. Nothing would ever pick it up
-	// again, and the user could not even delete it. The reconciliation
-	// marks it as failed, so it appears in the history and can be
-	// cleared.
-	if reconciled, err := jobManager.Reconcile(); err != nil {
-		return fmt.Errorf("reconcile the interrupted jobs: %w", err)
-	} else if reconciled > 0 {
-		consoleLog.Warn("jobs", fmt.Sprintf(
-			"%d job(s) were interrupted by a restart and have been marked as failed", reconciled))
-	}
-
-	appService := bindings.NewAppService(pbService, settings, jobManager, consoleLog, downloadService)
+	appService := bindings.NewAppService(pbService, settings, consoleLog, downloadService)
 
 	// Mount PocketBase's own REST and file API alongside the static
 	// frontend. This keeps everything on a single origin: no extra
@@ -148,14 +121,10 @@ func run() error {
 		Mac: application.MacOptions{
 			ApplicationShouldTerminateAfterLastWindowClosed: true,
 		},
-		// The running jobs are stopped when the application closes, so
-		// that a job is never killed in the middle of a write.
-		//
-		// The sidecar is stopped as well: it is a child process, and
-		// it must not outlive the application that started it.
+		// The sidecar is stopped when the application closes: it is a
+		// child process, and it must not outlive the application that
+		// started it.
 		OnShutdown: func() {
-			jobManager.ShutdownWithTimeout(jobs.ShutdownTimeout)
-
 			shutdownCtx, cancel := context.WithTimeout(context.Background(), sidecarShutdown)
 			defer cancel()
 			if err := sidecar.Stop(shutdownCtx); err != nil {
@@ -166,7 +135,6 @@ func run() error {
 
 	// The event bridge pushes job updates to the frontend.
 	bridge = bindings.NewEventBridge(app)
-	jobManager.SetEmitter(bridge)
 	consoleLog.SetEmitter(bridge)
 
 	app.Window.NewWithOptions(application.WebviewWindowOptions{

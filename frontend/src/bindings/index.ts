@@ -11,7 +11,6 @@
 
 import * as AppServiceBindings from '../../bindings/github.com/incurl/bitmaher/internal/bindings/appservice';
 import * as BindingsModels from '../../bindings/github.com/incurl/bitmaher/internal/bindings/models';
-import * as JobsModels from '../../bindings/github.com/incurl/bitmaher/internal/jobs/models';
 import * as ConsoleModels from '../../bindings/github.com/incurl/bitmaher/internal/console/models';
 import * as Aria2Models from '../../bindings/github.com/incurl/bitmaher/internal/aria2/models';
 import * as DownloadsModels from '../../bindings/github.com/incurl/bitmaher/internal/downloads/models';
@@ -21,20 +20,6 @@ import * as PocketbaseModels from '../../bindings/github.com/incurl/bitmaher/int
 // cross the Wails boundary. The status and kind fields are narrowed to
 // literal unions here, at the single point where the raw generated types
 // enter the application.
-export type Job = JobsModels.Job & {
-  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
-  // The bindings are generated as interfaces, where a missing array is
-  // typed as nullable. The backend always sends an array, so it is
-  // normalised here.
-  artifact_ids: string[];
-  input_artifact_ids: string[];
-  params: Record<string, unknown>;
-  result: Record<string, unknown>;
-};
-export type Artifact = JobsModels.Artifact & {
-  kind: 'input' | 'output';
-  meta: Record<string, unknown>;
-};
 export type ConsoleEntry = ConsoleModels.Entry;
 
 /**
@@ -112,77 +97,9 @@ export type Settings = Omit<BindingsModels.SettingsView, 'aria2'> & {
 
 
 /**
- * The Wails event name emitted when a job changes state.
- */
-export const EVENT_JOB_UPDATED = 'job:updated';
-
-/**
  * The Wails event name emitted when a debug console entry is added.
  */
 export const EVENT_CONSOLE_ENTRY = 'console:entry';
-
-/**
- * Submits a job.
- */
-export function submitJob(request: {
-  title?: string;
-  prompt: string;
-  params?: Record<string, unknown>;
-  input_artifact_ids?: string[];
-}): Promise<Job> {
-  return AppServiceBindings.SubmitJob(request as never) as unknown as Promise<Job>;
-}
-
-/**
- * Cancels a pending or running job.
- */
-export function cancelJob(jobId: string): Promise<void> {
-  return AppServiceBindings.CancelJob(jobId) as Promise<void>;
-}
-
-/**
- * Removes a finished job from the queue.
- */
-export function deleteJob(jobId: string): Promise<void> {
-  return AppServiceBindings.DeleteJob(jobId) as Promise<void>;
-}
-
-/**
- * Re-runs a job with the same parameters.
- */
-export function retryJob(jobId: string): Promise<Job> {
-  return AppServiceBindings.RetryJob(jobId) as unknown as Promise<Job>;
-}
-
-/**
- * Lists the recorded jobs.
- */
-export function listJobs(limit = 50): Promise<Job[]> {
-  return AppServiceBindings.ListJobs(limit) as unknown as Promise<Job[]>;
-}
-
-/**
- * Lists the stored artifacts.
- *
- * An empty jobId lists every artifact.
- *
- * No panel calls this yet: the scaffold has no artifact panel. It is
- * here because the artifacts are part of the queue's contract, and the
- * add-frontend-panel skill uses it as the example of a list with
- * per-row actions.
- */
-export function listArtifacts(jobId = '', limit = 50): Promise<Artifact[]> {
-  return AppServiceBindings.ListArtifacts(jobId, limit) as unknown as Promise<Artifact[]>;
-}
-
-/**
- * Removes a stored artifact.
- *
- * No panel calls this yet: see listArtifacts.
- */
-export function deleteArtifact(artifactId: string): Promise<void> {
-  return AppServiceBindings.DeleteArtifact(artifactId) as Promise<void>;
-}
 
 /**
  * Returns the recorded debug console entries, oldest first.
@@ -222,7 +139,7 @@ export function saveUI(ui: { zoom: number; theme: string }): Promise<void> {
 /**
  * The generated model classes, re-exported for callers that need them.
  */
-export { JobsModels, BindingsModels, ConsoleModels, Aria2Models, DownloadsModels, PocketbaseModels };
+export { BindingsModels, ConsoleModels, Aria2Models, DownloadsModels, PocketbaseModels };
 
 /**
  * Stores the sidecar settings.

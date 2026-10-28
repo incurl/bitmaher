@@ -9,7 +9,6 @@ package bindings
 import (
 	"github.com/incurl/bitmaher/internal/console"
 	"github.com/incurl/bitmaher/internal/downloads"
-	"github.com/incurl/bitmaher/internal/jobs"
 	"github.com/incurl/bitmaher/internal/pocketbase"
 )
 
@@ -18,7 +17,6 @@ import (
 type AppService struct {
 	pb       *pocketbase.Service
 	settings *pocketbase.SettingsStore
-	jobs     *jobs.Manager
 	console  *console.Log
 	// downloads drives the Aria2-Next sidecar and keeps the download
 	// records.
@@ -32,14 +30,12 @@ type AppService struct {
 func NewAppService(
 	pb *pocketbase.Service,
 	settings *pocketbase.SettingsStore,
-	jobManager *jobs.Manager,
 	log *console.Log,
 	downloadService *downloads.Service,
 ) *AppService {
 	return &AppService{
 		pb:        pb,
 		settings:  settings,
-		jobs:      jobManager,
 		console:   log,
 		downloads: downloadService,
 	}
@@ -145,58 +141,6 @@ func (s *AppService) SaveCredentials(apiKey, baseURL string) error {
 // SaveUI stores the interface preferences, including the zoom level.
 func (s *AppService) SaveUI(ui pocketbase.UI) error {
 	return s.settings.SetUI(ui)
-}
-
-// SubmitJob queues a job.
-func (s *AppService) SubmitJob(request jobs.Request) (jobs.Job, error) {
-	return s.jobs.Submit(request)
-}
-
-// CancelJob cancels a pending or running job.
-func (s *AppService) CancelJob(jobID string) error {
-	return s.jobs.Cancel(jobID)
-}
-
-// DeleteJob removes a finished job from the queue.
-//
-// The artifacts the job produced are removed with it.
-func (s *AppService) DeleteJob(jobID string) error {
-	return s.jobs.DeleteJob(jobID)
-}
-
-// RetryJob re-runs a job with the same parameters.
-//
-// Only the **inputs** of the original job are re-used. Its outputs stay
-// with the original job: a retry produces its own results, and moving
-// the outputs would strip the original of them.
-func (s *AppService) RetryJob(jobID string) (jobs.Job, error) {
-	job, err := s.jobs.GetJob(jobID)
-	if err != nil {
-		return jobs.Job{}, err
-	}
-
-	request := jobs.Request{
-		Title:            job.Title,
-		Prompt:           job.Prompt,
-		Params:           job.Params,
-		InputArtifactIDs: job.InputArtifactIDs,
-	}
-	return s.jobs.Submit(request)
-}
-
-// ListJobs returns the recorded jobs.
-func (s *AppService) ListJobs(limit int) ([]jobs.Job, error) {
-	return s.jobs.ListJobs(limit)
-}
-
-// ListArtifacts returns the stored artifacts.
-func (s *AppService) ListArtifacts(jobID string, limit int) ([]jobs.Artifact, error) {
-	return s.jobs.ListArtifacts(jobID, limit)
-}
-
-// DeleteArtifact removes a stored artifact.
-func (s *AppService) DeleteArtifact(artifactID string) error {
-	return s.jobs.DeleteArtifact(artifactID)
 }
 
 // AppName is the name of the application.

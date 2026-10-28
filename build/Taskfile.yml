@@ -1,6 +1,61 @@
 version: '3'
 
+vars:
+  # The version of the bundled Aria2-Next binaries.
+  #
+  # The binaries are fetched from the upstream releases. They are GPLv2
+  # and are shipped as opaque executables: the sources are not vendored
+  # into this repository, and nothing is linked against them.
+  ARIA2_VERSION: '3.0.9'
+
+  # The upstream release the binaries come from.
+  ARIA2_REPO: 'AnInsomniacy/aria2-next'
+
 tasks:
+  fetch:aria2:
+    summary: Fetches the bundled aria2-next binaries
+    description: |
+      Downloads the prebuilt aria2-next binaries for every supported
+      platform into internal/aria2/assets, so that they are embedded in
+      the application.
+
+      The binaries are not in the Git repository: they are large, and the
+      GPL requires that the sources are offered separately, which the
+      upstream release already does.
+    cmds:
+      - |
+        set -euo pipefail
+        version="{{.ARIA2_VERSION}}"
+        repo="{{.ARIA2_REPO}}"
+
+        for target in linux-x86_64 linux-aarch64 darwin-x86_64 darwin-arm64 windows-x86_64; do
+          os="${target%%-*}"
+          arch="${target##*-}"
+
+          dir="internal/aria2/assets/$target"
+          mkdir -p "$dir"
+
+          if [ "$target" = "windows-x86_64" ]; then
+            file="$dir/aria2-next.exe"
+            asset="aria2-next-$version-windows-$arch.exe"
+          elif [ "$os" = "darwin" ]; then
+            file="$dir/aria2-next"
+            asset="aria2-next-$version-macos-$arch"
+          else
+            file="$dir/aria2-next"
+            asset="aria2-next-$version-linux-$arch"
+          fi
+
+          echo "fetching $asset"
+          curl -fsSL -o "$file" \
+            "https://github.com/$repo/releases/download/v$version/$asset"
+          chmod +x "$file"
+        done
+        echo "the aria2-next binaries are in place"
+    # The task runs from the repository root, so that the paths of the
+    # assets are the ones the embed directive expects.
+    dir: .
+
   go:mod:tidy:
     summary: Runs `go mod tidy`
     internal: true

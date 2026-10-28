@@ -1,4 +1,4 @@
-module github.com/incurl/valkyrie
+module github.com/incurl/bitmaher
 
 go 1.26.0
 

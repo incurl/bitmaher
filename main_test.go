@@ -74,9 +74,9 @@ func TestCombineHandlersRoutesAPIToPocketBase(t *testing.T) {
 // directory can be relocated, so that the app can run against an
 // isolated database during development and testing.
 func TestDataDirHonoursTheEnvironmentVariable(t *testing.T) {
-	t.Setenv("VALKYRIE_DATA_DIR", "/tmp/valkyrie-test-data")
+	t.Setenv("BITMAHER_DATA_DIR", "/tmp/bitmaher-test-data")
 
-	if got := dataDir(); got != "/tmp/valkyrie-test-data" {
+	if got := dataDir(); got != "/tmp/bitmaher-test-data" {
 		t.Errorf("data dir = %q, want the overridden one", got)
 	}
 }

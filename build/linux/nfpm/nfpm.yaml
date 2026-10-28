@@ -3,7 +3,7 @@
 #
 # The lines below are called `modelines`. See `:help modeline`
 
-name: "valkyrie"
+name: "bitmaher"
 arch: ${GOARCH}
 platform: "linux"
 version: "0.1.0"
@@ -12,17 +12,17 @@ priority: "extra"
 maintainer: ${GIT_COMMITTER_NAME} <${GIT_COMMITTER_EMAIL}>
 description: "A Wails v3 desktop application"
 vendor: "incurl"
-homepage: "https://github.com/incurl/valkyrie"
+homepage: "https://github.com/incurl/bitmaher"
 license: "MIT"
 release: "1"
 
 contents:
-  - src: "./bin/valkyrie"
-    dst: "/usr/local/bin/valkyrie"
+  - src: "./bin/bitmaher"
+    dst: "/usr/local/bin/bitmaher"
   - src: "./build/appicon.png"
-    dst: "/usr/share/icons/hicolor/128x128/apps/valkyrie.png"
-  - src: "./build/linux/valkyrie.desktop"
-    dst: "/usr/share/applications/valkyrie.desktop"
+    dst: "/usr/share/icons/hicolor/128x128/apps/bitmaher.png"
+  - src: "./build/linux/bitmaher.desktop"
+    dst: "/usr/share/applications/bitmaher.desktop"
 
 # Default dependencies for the GTK4 + WebKitGTK 6.0 stack (Ubuntu 24.04+ / Debian 13+)
 depends:

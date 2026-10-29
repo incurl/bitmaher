@@ -1,11 +1,15 @@
 /**
  * The Tauri-compatible window API.
  *
+ * The window of the application is the Wails runtime's own window: the
+ * runtime addresses the window the webview runs in, and its methods
+ * are the ones the operating system answers to.
+ *
  * BitMaher runs in a single window, so the parts of the API that belong
  * to the multi-window features of Rayburst — the float window, the add
  * window — answer with the neutral value.
  */
-import { Events } from '@wailsio/runtime';
+import { Window } from '@wailsio/runtime';
 import { listen as listenEvent, type Event, type UnlistenFn } from './event';
 import { invoke } from './core';
 
@@ -68,51 +72,57 @@ const mainWindow: WindowHandle = {
   label: 'main',
 
   async destroy() {
-    await Events.Emit('window:destroy' as never);
+    // The runtime has no destroy: closing the window is the end of it.
+    await Window.Close();
   },
 
   async hide() {
-    await Events.Emit('window:hide' as never);
+    await Window.Hide();
   },
 
   async show() {
-    await Events.Emit('window:show' as never);
+    await Window.Show();
   },
 
   async minimize() {
-    await Events.Emit('window:minimize' as never);
+    await Window.Minimise();
   },
 
   async maximize() {
-    await Events.Emit('window:maximize' as never);
+    await Window.Maximise();
   },
 
   async unmaximize() {
-    await Events.Emit('window:unmaximize' as never);
+    await Window.UnMaximise();
   },
 
   async unminimize() {
-    await Events.Emit('window:unminimize' as never);
+    await Window.UnMinimise();
   },
 
   async toggleMaximize() {
-    await Events.Emit('window:toggle-maximize' as never);
+    await Window.ToggleMaximise();
   },
 
   async close() {
-    await Events.Emit('window:close' as never);
+    await Window.Close();
   },
 
   async isVisible() {
+    // The runtime has no question about the visibility. The window is
+    // there: the webview is running inside it.
     return true;
   },
 
   async isMaximized() {
-    return false;
+    return Window.IsMaximised();
   },
 
   async startDragging() {
-    await Events.Emit('window:start-dragging' as never);
+    // The runtime has no drag of its own. The regions of the window
+    // that drag are the ones the stylesheet marks, and the webview
+    // drags them itself.
+    return;
   },
 
   async setDecorations(visible: boolean) {
@@ -127,23 +137,31 @@ const mainWindow: WindowHandle = {
   },
 
   async onScaleChanged(handler) {
-    return listenEvent<number>('window:scale-changed', (event) => handler({ payload: event.payload }));
+    // The Wails event carries no payload: it says that the scale of the
+    // screen changed, and not by how much. The factor is read here, so
+    // that the caller gets the same shape as under Tauri.
+    return listenEvent<number>('common:WindowDPIChanged', () =>
+      handler({ payload: window.devicePixelRatio }),
+    );
   },
 
   async onResized(handler) {
-    return listenEvent<{ width: number; height: number }>('window:resized', (event) =>
-      handler({ payload: event.payload }),
+    // The Wails event carries no payload either: it says that the
+    // window changed its size. The size is read here, so that the
+    // caller gets the same shape as under Tauri.
+    return listenEvent<{ width: number; height: number }>('common:WindowDidResize', () =>
+      handler({ payload: { width: window.innerWidth, height: window.innerHeight } }),
     );
   },
 
   async onCloseRequested(handler) {
-    return listenEvent<undefined>('window:close-requested', () =>
+    return listenEvent<undefined>('common:WindowClosing', () =>
       handler({ preventDefault: () => undefined }),
     );
   },
 
   async setFocus() {
-    await Events.Emit('window:focus' as never);
+    await Window.Focus();
   },
 
   async innerSize() {
@@ -151,7 +169,7 @@ const mainWindow: WindowHandle = {
   },
 
   async onFocusChanged(handler) {
-    return listenEvent<boolean>('window:focus-changed', (event) => handler({ payload: event.payload }));
+    return listenEvent<boolean>('common:WindowFocus', (event) => handler({ payload: event.payload }));
   },
 
   async listen<T>(eventName: string, handler: (event: Event<T>) => void) {

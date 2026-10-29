@@ -316,14 +316,9 @@ async function handleExitConfirm() {
   showExitDialog.value = false
   rememberChoice.value = false
 
-  // Hide the window and let the OS play its native close animation
-  // (DWM fade on Windows, AppKit transition on macOS, compositor
-  // effect on Linux).  No custom CSS or alpha animation needed.
-  const appWindow = getCurrentWindow()
-  await appWindow.hide()
-
-  // exit(0) sends an IPC call to Rust — if we destroy() first,
-  // the webview is gone and the IPC silently fails.
+  // The backend ends the application: it owns the sidecar, and the
+  // sidecar must not outlive it. The request never gets an answer,
+  // because the webview is gone by the time it could.
   const { exit } = await import('@tauri-apps/plugin-process')
   await exit(0)
 }
@@ -344,14 +339,11 @@ async function handleMinimizeToTray() {
 async function onExitDialogAfterLeave() {
   if (pendingTrayHide.value) {
     pendingTrayHide.value = false
-    const appWindow = getCurrentWindow()
 
-    // Signal Rust to hide the Dock icon if the user opted in.
-    // The Rust command reads the preference from the persistent store.
+    // The backend hides the window. The application stays alive, and
+    // the engine keeps transferring.
     const { invoke } = await import('@tauri-apps/api/core')
-    await invoke('set_dock_visible', { visible: false })
-
-    await appWindow.hide()
+    await invoke('minimize_window_to_tray')
   }
 }
 
@@ -649,35 +641,30 @@ onMounted(async () => {
   unlistenSingleInstance = listeners.unlistenSingleInstance
 
   const appWindow = getCurrentWindow()
-  // Close prevention: both JS event.preventDefault() and Rust
-  // api.prevent_close() are needed for reliable interception across
-  // all close paths (native traffic light, Cmd+W, taskbar close).
+  // The close of the window is held by the backend, which asks the
+  // frontend what to do with it. The webview event is not used: it
+  // does not fire on every platform, and the backend's hook does.
   unlistenCloseRequested = await appWindow.onCloseRequested(async (event) => {
-    // With native decorations (macOS overlay), the JS handler MUST call
-    // preventDefault() to prevent the native close.  The Rust on_window_event
-    // handler calls api.prevent_close() as a parallel safeguard.
+    // The close is held by the backend. This call is the belt to its
+    // braces: the window must not go away before the user has been
+    // asked.
     event.preventDefault()
-    // Rust on_window_event handles the full close flow:
-    // - minimizeToTrayOnClose=true → handle_minimize_to_tray (hide or destroy)
-    // - minimizeToTrayOnClose=false → emit("show-exit-dialog")
-    // This JS path is a fallback for platforms where the Rust event may
-    // not reliably fire (e.g. macOS traffic-light with overlay titlebar).
-    if (preferenceStore.config.minimizeToTrayOnClose) return
-    if (!isExiting.value) {
-      rememberChoice.value = !!preferenceStore.config.minimizeToTrayOnClose
-      showExitDialog.value = true
-    }
   })
 
-  // Rust emits "show-exit-dialog" when the native close is intercepted
-  // and minimize-to-tray is NOT enabled. This is more reliable than the
-  // JS onCloseRequested listener on Linux/Wayland with decorations:false,
-  // where certain close paths (taskbar close, GNOME overview ×) do not
-  // trigger the webview callback.
-  unlistenExitDialog = await listen('show-exit-dialog', () => {
-    if (!isExiting.value) {
-      showExitDialog.value = true
+  // The backend holds the close of the window and asks the frontend
+  // what to do with it. This is the path that works on every platform:
+  // the close never reaches the frontend as a webview event on Linux
+  // with decorations:false, where the taskbar close and the overview
+  // × do not trigger the webview callback.
+  unlistenExitDialog = await listen('window:close-request', async () => {
+    if (isExiting.value) return
+    if (preferenceStore.config.minimizeToTrayOnClose) {
+      const { invoke } = await import('@tauri-apps/api/core')
+      await invoke('minimize_window_to_tray')
+      return
     }
+    rememberChoice.value = false
+    showExitDialog.value = true
   })
   unlistenAddWindowSubmit = await listen('add-window:submitted', showDownloadsAfterSubmit)
   // The floating window's mode changed from its menu or the tray.

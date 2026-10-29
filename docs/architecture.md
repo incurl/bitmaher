@@ -181,6 +181,21 @@ the hidden-inset one, so the lights sit over the draggable chrome of the layout.
 The **system title bar** preference turns the native frame back on, for the Linux window managers that force their own
 decorations. It calls `SetWindowDecorations`, which is `SetFrameless` on the Wails window.
 
+## The end of the application is the backend's business
+
+The webview cannot end the process on its own. The Quit action of the interface asks the Wails runtime to quit, and the
+runtime asks the application to end: the shutdown hook runs, the sidecar is stopped, the window is torn down, and the process
+leaves. The order matters — the engine is a child process, and it must not outlive the application that started it.
+
+The **close of the window** is a different thing, and it is held by the backend. Wails maps the native close of every platform
+onto one event (`common:WindowClosing`), so a single hook catches the taskbar close, the overview cross and the traffic lights
+alike. The hook cancels the close and asks the frontend what to do with it: the window goes away, or the application goes with
+it. The frontend answers, and the backend releases the close.
+
+The **restart** is the backend's business too, because the backend owns the sidecar and has to bring it up again. The new
+instance is started by the old one as it goes down, in a process group of its own, and it waits for the old one to be gone
+before it touches the database: the database belongs to one process at a time.
+
 ## The access rules are the write gate
 
 The scaffold sets `ListRule` and `ViewRule` to `""` (public read) on `jobs` and `artifacts`, and leaves `app_settings` without

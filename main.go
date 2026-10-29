@@ -66,6 +66,13 @@ func main() {
 
 // run bootstraps the backend and starts the Wails application.
 func run() error {
+	// --- The restart ------------------------------------------------
+	// A restart starts the new instance as the old one goes down. The
+	// old one still holds the database when it does, so the new one
+	// waits here, before it touches anything: the database belongs to
+	// one process at a time.
+	bindings.WaitForPreviousInstance()
+
 	// --- PocketBase ------------------------------------------------
 	pbService := pocketbase.NewService(dataDir())
 	if err := pbService.Bootstrap(); err != nil {
@@ -136,6 +143,12 @@ func run() error {
 	}
 
 	// --- Wails application -----------------------------------------
+	// closer holds the close of the window until the frontend has
+	// released it. It is declared here, because the shutdown of the
+	// application needs it, and it is filled in once the window
+	// exists.
+	var closer *bindings.WindowCloser
+
 	app := application.New(application.Options{
 		Name: bindings.AppName,
 		// The description lands in the about box of the platform, so
@@ -154,6 +167,22 @@ func run() error {
 		// child process, and it must not outlive the application that
 		// started it.
 		OnShutdown: func() {
+			// The close of the window is released, so that the
+			// shutdown is not held by a question that nobody is
+			// there to answer.
+			if closer != nil {
+				closer.Stop()
+			}
+
+			// A restart starts the new instance as this one goes
+			// down, so that the two do not fight over the data
+			// directory and the port of the engine.
+			if bindings.ExitCodeOf(appService) == bindings.ExitCodeRelaunch {
+				if err := bindings.Relaunch(); err != nil {
+					consoleLog.Error("app", "the application could not be restarted: "+err.Error())
+				}
+			}
+
 			// The pump stops before the sidecar, so that it does not
 			// read an engine that is on its way out.
 			enginePump.Stop()
@@ -214,6 +243,17 @@ func run() error {
 	// The service applies the size of the interface when the user
 	// changes it, so that the setting is kept in one place.
 	bindings.SetWindow(appService, window)
+
+	// The service ends the application when the frontend asks for it.
+	// The Wails quit tears the webview down, so it runs on its own
+	// goroutine: the request of the frontend never gets an answer.
+	bindings.SetQuitter(appService, app.Quit)
+
+	// The close of the window is held until the frontend has asked the
+	// user what to do with it. The window goes away, or the application
+	// goes with it.
+	closer = bindings.InterceptWindowClose(app, window)
+	bindings.SetWindowCloser(appService, closer)
 
 	return app.Run()
 }

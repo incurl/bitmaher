@@ -15,7 +15,9 @@ import (
 // mistake this test catches.
 var expectedMethods = []string{
 	"AddDownload",
+	"AppExit",
 	"AppName",
+	"AppRelaunch",
 	"AppVersion",
 	"CancelDownloadPreview",
 	"ClearConsoleEntries",
@@ -50,6 +52,7 @@ var expectedMethods = []string{
 	"ListDirectoryFiles",
 	"ListDownloads",
 	"ListPresets",
+	"MinimiseWindowToTray",
 	"NotificationAccessState",
 	"OpenDefaultAppsSettings",
 	"OpenExternalURL",
@@ -65,6 +68,7 @@ var expectedMethods = []string{
 	"ReadLocalFile",
 	"ReconcileBtPeerBlocklist",
 	"RefreshRuntimeConfig",
+	"ReleaseWindowClose",
 	"RemoveDownload",
 	"RenameCompletedFile",
 	"ResolveFileCategory",

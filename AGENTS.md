@@ -121,6 +121,7 @@ go run ./tools/watchdog-check    # a crashed sidecar is started again
 go run ./tools/bundled-check     # the embedded binary is found and run
 go run ./tools/leak-check        # no sidecar outlives the application
 go run ./tools/torrent-check     # a torrent's files are listed and chosen
+go run ./tools/quit-check        # the quit ends the application and the engine
 
 # Frontend (from frontend/)
 npm install --legacy-peer-deps   # npm 9 cannot resolve the vitest 4 tree
@@ -155,6 +156,7 @@ through their namespace: `common:generate:bindings`, `common:fetch:aria2`, `comm
 | A backend method the UI calls | `internal/bindings/service.go` and `downloads.go`, then regenerate the bindings, then a wrapper in `frontend/src/bindings/index.ts` | `go test ./internal/... .` and `npm run typecheck` |
 | The engine's RPC surface | `internal/aria2/rpcclient.go` and `status.go`, then a test with a stub endpoint | `go test ./internal/aria2/` and `go run ./tools/e2e-check` |
 | The sidecar lifecycle | `internal/aria2/manager.go` | `go run ./tools/watchdog-check` and `go run ./tools/bundled-check` |
+| The end of the application | `internal/bindings/lifecycle.go` and `window.go`, then the shims in `frontend/src/platform/` | `go run ./tools/quit-check` and `npm test` |
 | The download domain | `internal/downloads/` | `go test ./internal/downloads/` and `go run ./tools/e2e-check` |
 | The history of the downloads | `internal/downloads/history.go`, then a mapping in `frontend/src/platform/commands.ts` | `go test ./internal/downloads/` and `go run ./tools/e2e-check` |
 | A collection or a field | `internal/pocketbase/migrations/` (a new file with a later timestamp) | `go test ./internal/pocketbase/...` |
@@ -184,6 +186,7 @@ What the backend answers:
 | The BitTorrent blocklist | `get_bt_peer_blocklist_status`, `sync_bt_peer_blocklist`, `reconcile_bt_peer_blocklist` |
 | The remote files | `fetch_remote_bytes`, `preview_site_rules` |
 | The application | `set_app_log_level`, `export_diagnostic_logs`, `factory_reset`, `database_reset` |
+| The lifecycle | `app_exit`, `app_relaunch`, `release_window_close`, `minimize_window_to_tray` |
 
 The categories are the ones Rayburst uses, so that the two
 applications classify a download the same way. The rules are in

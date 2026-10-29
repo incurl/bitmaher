@@ -89,6 +89,18 @@ export function resolveCommand(
     case 'write_settings_backup_file':
       return { method: APP_SERVICE + '.GetSettings', args: [] };
 
+    // --- the lifecycle ----------------------------------------------------
+    // The end of the application is the backend's business: it owns the
+    // sidecar, and the sidecar must not outlive it.
+    case 'app_exit':
+      return { method: APP_SERVICE + '.AppExit', args: [exitCodeOf(args)] };
+    case 'app_relaunch':
+      return { method: APP_SERVICE + '.AppRelaunch', args: [] };
+    case 'release_window_close':
+      return { method: APP_SERVICE + '.ReleaseWindowClose', args: [] };
+    case 'minimize_window_to_tray':
+      return { method: APP_SERVICE + '.MinimiseWindowToTray', args: [] };
+
     // --- the console ------------------------------------------------------
     case 'clear_log_file':
       return { method: APP_SERVICE + '.ClearConsoleEntries', args: [] };
@@ -327,6 +339,12 @@ export function resolveCommand(
       // that the gap is visible in the console.
       return { method: APP_SERVICE + '.UnsupportedCommand', args: [command] };
   }
+}
+
+/** Reads the exit code the application ends with. */
+function exitCodeOf(args: Record<string, unknown>): number {
+  const value = args.code;
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 }
 
 /** Reads the number of tasks to list. */

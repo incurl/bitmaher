@@ -32,6 +32,15 @@ type AppService struct {
 	// of the interface is applied to. It is set once the Wails
 	// application exists.
 	window *application.WebviewWindow
+	// quit ends the application. It is the Wails application's own
+	// quit, installed by the bootstrap once the application exists.
+	quit func()
+	// exitCode is the code the application is asked to end with. It
+	// tells a restart apart from an ordinary exit.
+	exitCode int
+	// closer holds the close of the window until the frontend has
+	// released it.
+	closer *WindowCloser
 }
 
 // SetWindow tells the service which window the application runs in.

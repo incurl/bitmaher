@@ -131,6 +131,7 @@ go run ./tools/bundled-check      # the bundled binary is found and run
 go run ./tools/leak-check         # no sidecar outlives the application
 go run ./tools/torrent-check      # a torrent's files are listed and chosen
 go run ./tools/pump-check         # the pump publishes the snapshots
+go run ./tools/quit-check         # the quit ends the application and the engine
 
 # The frontend
 cd frontend && pnpm run typecheck && pnpm test && pnpm run build

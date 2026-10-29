@@ -72,10 +72,13 @@ function toggleMaximize() {
 
 async function close() {
   if (preferenceStore.config.minimizeToTrayOnClose) {
-    // Trigger native CloseRequested → Rust on_window_event handles
-    // hide/destroy via handle_minimize_to_tray() + Dock visibility.
-    appWindow.close()
+    // The window goes away and the application stays. The backend
+    // hides the window, so that the engine keeps transferring.
+    await appWindow.hide()
   } else {
+    // The application goes with the window. The layout shows the
+    // question, and the backend ends the application when the user
+    // has answered it.
     emit('close')
   }
 }

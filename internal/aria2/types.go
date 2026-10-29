@@ -201,6 +201,21 @@ type File struct {
 	// A torrent has more files than the user chose, and the ones that
 	// were not chosen are not downloaded.
 	Selected bool `json:"selected"`
+	// URIs are the sources of the file: the addresses it may be read
+	// from, and which of them is in use.
+	//
+	// A torrent's file has none of them, because it is read from the
+	// swarm; a file of an http download has one per mirror.
+	URIs []URI `json:"uris"`
+}
+
+// URI is one source of a file.
+type URI struct {
+	// URI is the address.
+	URI string `json:"uri"`
+	// Status is "used" for the source the engine is reading and
+	// "waiting" for a mirror it has not tried yet.
+	Status string `json:"status"`
 }
 
 // ---------------------------------------------------------------------------
@@ -323,11 +338,12 @@ type rawVersion struct {
 // slightly different set of keys in some versions, so it is decoded
 // separately.
 type rawFileEntry struct {
-	Index           string `json:"index"`
-	Path            string `json:"path"`
-	Length          string `json:"length"`
-	CompletedLength string `json:"completedLength"`
-	Selected        string `json:"selected"`
+	Index           string   `json:"index"`
+	Path            string   `json:"path"`
+	Length          string   `json:"length"`
+	CompletedLength string   `json:"completedLength"`
+	Selected        string   `json:"selected"`
+	URIs            []rawURI `json:"uris"`
 }
 
 // parseInt64 reads an aria2 number.

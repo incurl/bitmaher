@@ -145,18 +145,36 @@ type FileView struct {
 	CompletedLength int64 `json:"completed_length"`
 	// Selected reports whether the file is part of the download.
 	Selected bool `json:"selected"`
+	// URIs are the sources of the file.
+	//
+	// A file of an http download has one per mirror, and the one in
+	// use is marked; a torrent's file has none.
+	URIs []FileURIView `json:"uris"`
+}
+
+// FileURIView is one source of a file, as the frontend sees it.
+type FileURIView struct {
+	// URI is the address.
+	URI string `json:"uri"`
+	// Status is "used" or "waiting".
+	Status string `json:"status"`
 }
 
 // toFileViews converts the engine's files.
 func toFileViews(files []aria2.File) []FileView {
 	views := make([]FileView, 0, len(files))
 	for _, file := range files {
+		uris := make([]FileURIView, 0, len(file.URIs))
+		for _, uri := range file.URIs {
+			uris = append(uris, FileURIView{URI: uri.URI, Status: uri.Status})
+		}
 		views = append(views, FileView{
 			Index:           file.Index,
 			Path:            file.Path,
 			Length:          file.Length,
 			CompletedLength: file.CompletedLength,
 			Selected:        file.Selected,
+			URIs:            uris,
 		})
 	}
 	return views

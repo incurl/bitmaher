@@ -172,6 +172,71 @@ func TestToDownloadFallsBackToTheInfoHash(t *testing.T) {
 	}
 }
 
+// TestToFilesReadsThePayloadOfGetFiles verifies the conversion of the
+// files of a download.
+//
+// The panel of a download shows them, so the sizes, the progress and
+// the sources have to survive the conversion.
+func TestToFilesReadsThePayloadOfGetFiles(t *testing.T) {
+	raw := []rawFileEntry{
+		{
+			Index:           "1",
+			Path:            "/downloads/movie.mkv",
+			Length:          "1500000000",
+			CompletedLength: "750000000",
+			Selected:        "true",
+			URIs: []rawURI{
+				{URI: "http://example.com/movie.mkv", Status: "used"},
+				{URI: "http://mirror.example.com/movie.mkv", Status: "waiting"},
+			},
+		},
+	}
+
+	files := toFiles(raw)
+
+	if len(files) != 1 {
+		t.Fatalf("files = %d, want 1", len(files))
+	}
+	file := files[0]
+	if file.Index != 1 {
+		t.Errorf("index = %d", file.Index)
+	}
+	if file.Length != 1500000000 {
+		t.Errorf("length = %d", file.Length)
+	}
+	if file.CompletedLength != 750000000 {
+		t.Errorf("completed length = %d", file.CompletedLength)
+	}
+	if !file.Selected {
+		t.Error("the file should be selected")
+	}
+	if len(file.URIs) != 2 {
+		t.Fatalf("uris = %d, want 2", len(file.URIs))
+	}
+	if file.URIs[0].Status != "used" {
+		t.Errorf("the first source should be the one in use, got %q", file.URIs[0].Status)
+	}
+	if file.URIs[1].URI != "http://mirror.example.com/movie.mkv" {
+		t.Errorf("the mirror = %q", file.URIs[1].URI)
+	}
+}
+
+// TestToFilesOfATorrentHaveNoSources verifies the shape a torrent's
+// file has.
+//
+// It is read from the swarm, so the engine reports no address for it,
+// and the panel must not invent one.
+func TestToFilesOfATorrentHaveNoSources(t *testing.T) {
+	files := toFiles([]rawFileEntry{{Index: "1", Path: "/downloads/bbb/bbb.mp4", Selected: "true"}})
+
+	if len(files) != 1 {
+		t.Fatalf("files = %d, want 1", len(files))
+	}
+	if len(files[0].URIs) != 0 {
+		t.Errorf("uris = %d, want none", len(files[0].URIs))
+	}
+}
+
 // TestProgressIsClamped verifies the completion ratio.
 func TestProgressIsClamped(t *testing.T) {
 	cases := []struct {

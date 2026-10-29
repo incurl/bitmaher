@@ -53,6 +53,9 @@ export function toTask(job: Job): Aria2Task {
     uploadSpeed: String(job.upload_speed ?? 0),
     connections: String(job.connections ?? 0),
     dir: job.dir ?? '',
+    // The record carries no file list: the files belong to the engine,
+    // and are read on demand -- by the detail panel when it opens, and
+    // by the add-task dialog before it shows a torrent.
     files: [],
   };
 
@@ -105,7 +108,7 @@ export function toFile(file: {
   length: number;
   completed_length: number;
   selected: boolean;
-  uris?: { uri: string }[];
+  uris?: { uri: string; status: string }[];
 }): Aria2File {
   return {
     index: String(file.index),
@@ -113,7 +116,9 @@ export function toFile(file: {
     length: String(file.length ?? 0),
     completedLength: String(file.completed_length ?? 0),
     selected: file.selected ? 'true' : 'false',
-    uris: (file.uris ?? []).map((entry) => ({ uri: entry.uri, status: 'used' })),
+    // The engine reports which source it is reading and which ones it
+    // has not tried yet; a torrent's file has no source at all.
+    uris: (file.uris ?? []).map((entry) => ({ uri: entry.uri, status: entry.status || 'used' })),
   };
 }
 
@@ -128,7 +133,7 @@ export function toFiles(
         length: number;
         completed_length: number;
         selected: boolean;
-        uris?: { uri: string }[];
+        uris?: { uri: string; status: string }[];
       }[]
     | null
     | undefined,

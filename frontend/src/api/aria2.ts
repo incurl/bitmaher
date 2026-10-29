@@ -242,6 +242,7 @@ export async function getFiles(params: { gid: string }): Promise<Aria2File[]> {
     length: number;
     completed_length: number;
     selected: boolean;
+    uris?: { uri: string; status: string }[];
   }[];
 
   return (files ?? []).map(toFile);

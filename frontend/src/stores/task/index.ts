@@ -99,6 +99,9 @@ export const useTaskStore = defineStore('task', () => {
   let historyWork: Promise<void> | undefined
   let historyAgain = false
   let detailWork: Promise<void> | undefined
+  let detailFilesWork: Promise<void> | undefined
+  /** The download whose files are read next, once the read in flight ends. */
+  let detailFilesPending = ''
   const resubmissionPromises = new Map<string, Promise<void>>()
   /** In-memory map: GID → original .torrent file path for post-download cleanup. */
   const torrentSourcePaths = new Map<string, string>()
@@ -294,6 +297,43 @@ export const useTaskStore = defineStore('task', () => {
     })
   }
 
+  /**
+   * Reads the files of the download whose details are open.
+   *
+   * The record the backend keeps carries no file list -- the files are
+   * read from the engine when they are needed -- so the panel asks for
+   * them when it opens, and asks again while the download is live, so
+   * that the progress of every file follows the download.
+   *
+   * One read is in flight at a time. A request that arrives during a
+   * read is kept, and it is the one that runs when the read finishes:
+   * it may belong to another download, whose files must be read even
+   * though it is no longer being read on the tick.
+   */
+  function refreshDetailFiles(gid: string) {
+    if (!gid || !apiReady) return
+    if (detailFilesWork) {
+      detailFilesPending = gid
+      return
+    }
+    detailFilesWork = api
+      .getFiles({ gid })
+      .then((files) => {
+        // A read that lands after the user opened another download, or
+        // closed the panel, must not fill the list.
+        if (taskDetailVisible.value && currentTaskGid.value === gid) {
+          currentTaskFiles.value = files
+        }
+      })
+      .catch((error: unknown) => logger.debug('TaskStore.getFiles', error))
+      .finally(() => {
+        detailFilesWork = undefined
+        const pending = detailFilesPending
+        detailFilesPending = ''
+        if (pending && taskDetailVisible.value) refreshDetailFiles(pending)
+      })
+  }
+
   function refreshDetail() {
     if (detailWork || !taskDetailVisible.value || !currentTaskGid.value) return
     const gid = currentTaskGid.value
@@ -308,6 +348,9 @@ export const useTaskStore = defineStore('task', () => {
       .finally(() => {
         detailWork = undefined
       })
+    // A download that has come to rest keeps the files it has, so they
+    // are read once; a live one is read on every tick.
+    if (currentTaskItem.value && isLiveTask(currentTaskItem.value)) refreshDetailFiles(gid)
   }
 
   /** Applies a pump snapshot, pushed as `tasks:snapshot` or returned by a refresh. */
@@ -446,6 +489,9 @@ export const useTaskStore = defineStore('task', () => {
     updateCurrentTaskItem(task)
     currentTaskGid.value = task.gid
     taskDetailVisible.value = true
+    // The files are not a part of the record: the engine has them, and
+    // the panel reads them as soon as it opens.
+    refreshDetailFiles(task.gid)
     api?.setDetailedTask?.(task.gid).catch((error) => logger.debug('TaskStore.setDetailedTask', error))
   }
 
@@ -461,9 +507,15 @@ export const useTaskStore = defineStore('task', () => {
   }
 
   function updateCurrentTaskItem(task: Aria2Task | null) {
+    const previousGid = currentTaskItem.value?.gid
     currentTaskItem.value = task
     if (task) {
-      currentTaskFiles.value = task.files
+      // A record carries no file list, and the files of the panel are
+      // read from the engine: an empty list from a record must not
+      // clear the ones that were read. Another download's files are
+      // another download's, though.
+      if (task.files?.length) currentTaskFiles.value = task.files
+      else if (task.gid !== previousGid) currentTaskFiles.value = []
       currentTaskPeers.value = task.peers || []
     } else {
       currentTaskFiles.value = []

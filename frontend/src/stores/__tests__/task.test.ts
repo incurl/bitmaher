@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 let useTaskStore: typeof import('../task').useTaskStore
-import type { Aria2Task, Aria2Peer, TaskStatus, HistoryRecord } from '@shared/types'
+import type { Aria2Task, Aria2File, Aria2Peer, TaskStatus, HistoryRecord } from '@shared/types'
 let registerAddedAt: typeof import('@/composables/useTaskOrder').registerAddedAt
 
 vi.mock('@tauri-apps/api/core', () => ({
@@ -573,6 +573,112 @@ describe('TaskStore', () => {
     store.showTaskDetail(makeMockTask('gid1'))
     store.hideTaskDetail()
     expect(store.taskDetailVisible).toBe(false)
+  })
+
+  it('showTaskDetail reads the files of the download from the engine', async () => {
+    mockApi.getFiles.mockResolvedValue([
+      { index: '1', path: '/tmp/f1', length: '100', completedLength: '50', selected: 'true', uris: [] },
+    ])
+
+    store.showTaskDetail(makeMockTask('gid1'))
+
+    await vi.waitFor(() => expect(store.currentTaskFiles).toHaveLength(1))
+    expect(mockApi.getFiles).toHaveBeenCalledWith({ gid: 'gid1' })
+  })
+
+  it('keeps the files the panel read when the record arrives without any', async () => {
+    mockApi.getFiles.mockResolvedValue([
+      { index: '1', path: '/tmp/f1', length: '100', completedLength: '50', selected: 'true', uris: [] },
+    ])
+    store.showTaskDetail(makeMockTask('gid1'))
+    await vi.waitFor(() => expect(store.currentTaskFiles).toHaveLength(1))
+
+    // The snapshot carries the record of the download, which has no
+    // file list of its own: it must not clear the ones that were read.
+    mockApi.fetchTaskList.mockResolvedValueOnce([
+      makeMockTask('gid1', 'active', { completedLength: '600' }),
+    ])
+    await store.fetchList()
+
+    expect(store.currentTaskItem?.completedLength).toBe('600')
+    expect(store.currentTaskFiles).toHaveLength(1)
+  })
+
+  it('does not show the files of the download that was open before', async () => {
+    mockApi.getFiles.mockResolvedValueOnce([
+      { index: '1', path: '/tmp/a', length: '100', completedLength: '50', selected: 'true', uris: [] },
+    ])
+    store.showTaskDetail(makeMockTask('a'))
+    await vi.waitFor(() => expect(store.currentTaskFiles).toHaveLength(1))
+
+    let resolveB!: (files: Aria2File[]) => void
+    mockApi.getFiles.mockImplementationOnce(
+      () =>
+        new Promise<Aria2File[]>((resolve) => {
+          resolveB = resolve
+        }),
+    )
+    store.showTaskDetail(makeMockTask('b'))
+
+    expect(store.currentTaskFiles).toEqual([])
+    resolveB([{ index: '1', path: '/tmp/b', length: '100', completedLength: '50', selected: 'true', uris: [] }])
+    await vi.waitFor(() => expect(store.currentTaskFiles[0]?.path).toBe('/tmp/b'))
+  })
+
+  it('reads the files of a finished download opened while another read was in flight', async () => {
+    let resolveLive!: (files: Aria2File[]) => void
+    mockApi.getFiles.mockImplementationOnce(
+      () =>
+        new Promise<Aria2File[]>((resolve) => {
+          resolveLive = resolve
+        }),
+    )
+    store.showTaskDetail(makeMockTask('live', 'active'))
+
+    mockApi.getFiles.mockResolvedValueOnce([
+      { index: '1', path: '/tmp/done', length: '100', completedLength: '100', selected: 'true', uris: [] },
+    ])
+    // A finished download is not read on the tick, so its files have to
+    // be read when the read in flight ends.
+    store.showTaskDetail(makeMockTask('done', 'complete'))
+
+    resolveLive([{ index: '1', path: '/tmp/live', length: '100', completedLength: '50', selected: 'true', uris: [] }])
+
+    await vi.waitFor(() => expect(store.currentTaskFiles[0]?.path).toBe('/tmp/done'))
+  })
+
+  it('reads the files again on every tick while the download is live', async () => {
+    mockApi.getFiles
+      .mockResolvedValueOnce([
+        { index: '1', path: '/tmp/f1', length: '100', completedLength: '50', selected: 'true', uris: [] },
+      ])
+      .mockResolvedValueOnce([
+        { index: '1', path: '/tmp/f1', length: '100', completedLength: '80', selected: 'true', uris: [] },
+      ])
+    store.showTaskDetail(makeMockTask('gid1', 'active'))
+    await vi.waitFor(() => expect(store.currentTaskFiles[0]?.completedLength).toBe('50'))
+
+    mockApi.fetchTaskList.mockResolvedValueOnce([makeMockTask('gid1', 'active')])
+    await store.fetchList()
+
+    await vi.waitFor(() => expect(store.currentTaskFiles[0]?.completedLength).toBe('80'))
+  })
+
+  it('drops a read that lands after the panel was closed', async () => {
+    let resolveRead!: (files: Aria2File[]) => void
+    mockApi.getFiles.mockImplementationOnce(
+      () =>
+        new Promise<Aria2File[]>((resolve) => {
+          resolveRead = resolve
+        }),
+    )
+    store.showTaskDetail(makeMockTask('gid1'))
+    store.hideTaskDetail()
+
+    resolveRead([{ index: '1', path: '/tmp/f1', length: '100', completedLength: '50', selected: 'true', uris: [] }])
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(store.currentTaskFiles).toEqual([])
   })
 
   // ─── changeCurrentList ──────────────────────────────────

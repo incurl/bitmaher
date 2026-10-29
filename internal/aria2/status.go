@@ -58,7 +58,20 @@ func toFile(raw rawFile) File {
 		Length:          parseInt64(raw.Length),
 		CompletedLength: parseInt64(raw.CompletedLength),
 		Selected:        parseBool(raw.Selected),
+		URIs:            toURIs(raw.URIs),
 	}
+}
+
+// toURIs converts the sources of a file.
+//
+// The engine reports an empty list for a torrent's file, because the
+// file is read from the swarm rather than from an address.
+func toURIs(raw []rawURI) []URI {
+	uris := make([]URI, 0, len(raw))
+	for _, entry := range raw {
+		uris = append(uris, URI{URI: entry.URI, Status: entry.Status})
+	}
+	return uris
 }
 
 // downloadTitle derives the display name of a download.
@@ -126,6 +139,7 @@ func toFiles(raw []rawFileEntry) []File {
 			Length:          parseInt64(entry.Length),
 			CompletedLength: parseInt64(entry.CompletedLength),
 			Selected:        parseBool(entry.Selected),
+			URIs:            toURIs(entry.URIs),
 		})
 	}
 	return files

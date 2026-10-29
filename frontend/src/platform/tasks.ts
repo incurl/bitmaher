@@ -40,6 +40,11 @@ export function toTask(job: Job): Aria2Task {
 
   const task: Aria2Task = {
     gid: job.gid,
+    // The record carries the name the backend resolved, and the engine
+    // has not reported a file list yet: without it the card has nothing
+    // to show but the placeholder. An empty title means "unknown", so it
+    // is carried as absent rather than as an empty string.
+    title: job.title || undefined,
     status,
     totalLength: String(job.total_length ?? 0),
     completedLength: String(job.completed_length ?? 0),

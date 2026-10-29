@@ -249,6 +249,17 @@ export interface Aria2Media {
 export interface Aria2Task {
   selectionManaged?: boolean
   selectionPrompt?: boolean
+  /**
+   * The display name the backend resolved for the download.
+   *
+   * It is the record's own title: `Out` when the user named the download,
+   * the torrent's name, or the last segment of the URI. The backend
+   * resolves it when the download is added, so it is known before the
+   * engine has reported a file list. The engine's `files` and
+   * `bittorrent` stay the truth once they are reported; this answers
+   * where the engine's vocabulary has nothing yet.
+   */
+  title?: string
   gid: string
   status: TaskStatus
   totalLength: string

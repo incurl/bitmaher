@@ -48,13 +48,13 @@ const getFileNameFromFile = (file?: Aria2File): string => {
   }
 }
 
-/** Resolves a human-readable task name from BT info or file path. */
+/** Resolves a human-readable task name from BT info, the record title or the file path. */
 export const getTaskName = (task: Aria2Task | null, options: { defaultName?: string } = {}): string => {
   const { defaultName = '' } = options
   let result = defaultName
   if (!task) return result
 
-  const { files, bittorrent } = task
+  const { files, bittorrent, title } = task
   if (bittorrent?.info?.name) return bittorrent.info.name
   if (bittorrent?.magnetLink) {
     try {
@@ -64,15 +64,24 @@ export const getTaskName = (task: Aria2Task | null, options: { defaultName?: str
       // Continue through file-based fallbacks.
     }
   }
-  if (!files || files.length === 0) return result
+
+  // The engine's file list is the truth once there is one, and the name
+  // in it is the name the engine resolved for the file itself. The
+  // record's title is what the backend resolved when the download was
+  // added, so it answers while the engine has reported no file at all —
+  // a live download, which would otherwise show only the default, the
+  // "Getting task name..." placeholder. It is the last named source
+  // rather than the first, because the backend falls back to a generic
+  // title when a URI names nothing, and a resolved file outranks that.
+  if (!files || files.length === 0) return title || result
 
   if (files.length === 1) {
     const name = getFileNameFromFile(files[0])
-    result = name || result
+    result = name || title || result
   } else {
     // Multi-file HTTP: use first non-empty filename
     const firstName = files.map((f) => getFileNameFromFile(f)).find((n) => !!n)
-    result = firstName || result
+    result = firstName || title || result
   }
 
   return result

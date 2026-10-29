@@ -140,6 +140,30 @@ describe('getTaskName', () => {
     expect(getTaskName(task)).toBe('Ubuntu ISO')
   })
 
+  it('returns the record title while the engine reports no file list', () => {
+    // Every live download is in this state: the backend resolved a title
+    // when it was added, and the engine has not reported a file yet.
+    const task = createMockTask({ files: [], title: 'Ubuntu 24.04 Desktop amd64' })
+    expect(getTaskName(task, { defaultName: 'Getting task name...' })).toBe('Ubuntu 24.04 Desktop amd64')
+  })
+
+  it('prefers the engine file name over the record title', () => {
+    const task = createMockTask({
+      files: [createMockFile({ path: '/downloads/movie.mp4' })],
+      title: 'movie',
+    })
+    expect(getTaskName(task)).toBe('movie.mp4')
+  })
+
+  it('prefers BT info name over the record title', () => {
+    const task = createMockTask({
+      files: [],
+      bittorrent: { info: { name: 'My Torrent' } },
+      title: 'Some Other Name',
+    })
+    expect(getTaskName(task)).toBe('My Torrent')
+  })
+
   it('returns filename for single-file HTTP task', () => {
     const task = createMockTask({
       files: [createMockFile({ path: '/downloads/movie.mp4' })],

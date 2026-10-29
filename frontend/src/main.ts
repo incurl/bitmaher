@@ -255,14 +255,8 @@ async function applyStartupLocale(): Promise<void> {
       void listen('add-window:closed', () => preferenceStore.reloadPreferenceFromDisk())
       void listen('float-window:mode', () => preferenceStore.reloadPreferenceFromDisk())
     })
-    // Every new download is confirmed in the standalone add window.
-    appStore.setAddTaskForwarder((batch) => {
-      void import('@tauri-apps/api/core')
-        .then(({ invoke }) =>
-          invoke('add_window_open', { batch: { items: batch.items ?? [], manual: batch.manual ?? false } }),
-        )
-        .catch((error: unknown) => logger.warn('main.addWindow', getErrorMessage(error)))
-    })
+    // The add-task dialog lives in this window, so the forwarder is not
+    // set here: the dialog installs it when it mounts.
     // The UI remains usable if database inspection fails.
     const database = useDatabaseStore()
     await database.init().catch(() => undefined)

@@ -1,8 +1,10 @@
 package downloads
 
 import (
+	"context"
 	"testing"
 
+	"github.com/incurl/bitmaher/internal/aria2"
 	bitmaherpb "github.com/incurl/bitmaher/internal/pocketbase"
 )
 
@@ -20,6 +22,25 @@ func newTestHistoryStore(t *testing.T) *HistoryStore {
 	})
 
 	return NewHistoryStore(service.App())
+}
+
+// newTestService creates a downloads service backed by a throwaway
+// database.
+//
+// The engine is not there: the service is used for the parts that do
+// not need it, which is the history.
+func newTestService(t *testing.T) *Service {
+	t.Helper()
+
+	pb := bitmaherpb.NewService(t.TempDir())
+	if err := pb.Bootstrap(); err != nil {
+		t.Fatalf("bootstrap pocketbase: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = pb.Close()
+	})
+
+	return NewService(aria2.NewManager(), NewStore(pb.App()), nil)
 }
 
 // TestTheHistorySurvivesAWriteAndARead verifies that an entry of the
@@ -198,5 +219,81 @@ func TestTheStaleEntriesAreRemoved(t *testing.T) {
 	}
 	if records[0].GID != "a" {
 		t.Errorf("the entry is %q, want a", records[0].GID)
+	}
+}
+
+// TestTheHistoryEntryCanBeRemoved pins that a download that has come
+// to rest can be deleted.
+//
+// A download that has come to rest has no record in the list any more:
+// it lives in the history. The interface shows it in the list anyway,
+// and deleting it has to work.
+//
+// The frontend only ever knows the engine's handle, so the handle is
+// what the download is looked up by.
+func TestTheHistoryEntryCanBeRemoved(t *testing.T) {
+	store := newTestHistoryStore(t)
+
+	_, err := store.AddRecord(HistoryRecord{
+		GID:      "gone123",
+		Name:     "payload.bin",
+		URI:      "https://example.com/payload.bin",
+		Dir:      "/downloads",
+		Status:   HistoryStatusComplete,
+		TaskType: "uri",
+		AddedAt:  "2026-10-29T10:00:00Z",
+	})
+	if err != nil {
+		t.Fatalf("add the record: %v", err)
+	}
+
+	if err := store.RemoveRecord("gone123"); err != nil {
+		t.Fatalf("remove the record: %v", err)
+	}
+
+	_, found, err := store.RecordByGID("gone123")
+	if err != nil {
+		t.Fatalf("read the record: %v", err)
+	}
+	if found {
+		t.Error("the record is still there")
+	}
+}
+
+// TestTheServiceRemovesADownloadThatHasComeToRest pins that a
+// download in the history can be deleted through the service.
+//
+// The service removes a download from the engine and forgets it. A
+// download that has come to rest is not in the engine any more, and it
+// has no record in the list: it is in the history.
+//
+// The frontend only ever knows the engine's handle, and it passes that
+// handle as the download's id. The service has to understand it.
+func TestTheServiceRemovesADownloadThatHasComeToRest(t *testing.T) {
+	service := newTestService(t)
+
+	_, err := service.history.AddRecord(HistoryRecord{
+		GID:      "rest123",
+		Name:     "payload.bin",
+		URI:      "https://example.com/payload.bin",
+		Dir:      "/downloads",
+		Status:   HistoryStatusComplete,
+		TaskType: "uri",
+		AddedAt:  "2026-10-29T10:00:00Z",
+	})
+	if err != nil {
+		t.Fatalf("add the record: %v", err)
+	}
+
+	if err := service.Remove(context.Background(), "rest123"); err != nil {
+		t.Fatalf("remove the download: %v", err)
+	}
+
+	_, found, err := service.history.RecordByGID("rest123")
+	if err != nil {
+		t.Fatalf("read the record: %v", err)
+	}
+	if found {
+		t.Error("the record is still there")
 	}
 }

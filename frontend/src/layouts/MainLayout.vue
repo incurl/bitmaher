@@ -39,6 +39,7 @@ import EngineRecoveryDialog from '@/components/layout/EngineRecoveryDialog.vue'
 import AboutPanel from '@/components/about/AboutPanel.vue'
 import ExtensionPanel from '@/components/extension/ExtensionPanel.vue'
 import TorrentDropOverlay from '@/components/task/TorrentDropOverlay.vue'
+import AddTaskDialog from '@/components/task/AddTaskDialog.vue'
 import UpdateDialog from '@/components/preference/UpdateDialog.vue'
 import TaskSelectionHost from '@/components/task/TaskSelectionHost.vue'
 import { useTaskStore } from '@/stores/task'
@@ -893,6 +894,9 @@ onUnmounted(() => {
         style="margin-top: 12px"
       />
     </NModal>
+    <!-- The add-task dialog. In Rayburst it is a window of its own; here it
+         is a modal of this window. -->
+    <AddTaskDialog />
     <TorrentDropOverlay />
   </div>
 </template>

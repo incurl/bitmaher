@@ -170,6 +170,71 @@ func main() {
 	fmt.Printf("5. The history holds the download: %s (added at %s)\n",
 		records[0].Name, records[0].AddedAt)
 
+	// The download that has come to rest can be deleted.
+	//
+	// The frontend only ever knows the engine's handle, and it passes
+	// that handle as the download's id. The service has to understand
+	// it, and a download in the history has no record in the list any
+	// more: it is removed from the history.
+	if err := service.Remove(ctx, job.GID); err != nil {
+		fmt.Println("   FAIL: the download could not be removed:", err)
+		os.Exit(1)
+	}
+	_, stillThere, err := history.RecordByGID(job.GID)
+	if err != nil {
+		fmt.Println("   FAIL: the history could not be read:", err)
+		os.Exit(1)
+	}
+	if stillThere {
+		fmt.Println("   FAIL: the history still holds the download")
+		os.Exit(1)
+	}
+	fmt.Println("6. The download was removed from the history")
+
+	// A download that is still known is paused, resumed and removed by
+	// the engine's handle.
+	//
+	// The frontend never knows the record's own id: it only knows the
+	// handle the engine gave, and it passes that as the download's id.
+	live, err := service.Add(ctx, downloads.AddRequest{
+		Kind: "http",
+		URI:  server.URL + "/payload.bin",
+		Dir:  dir,
+	})
+	if err != nil {
+		fmt.Println("   FAIL: the download could not be added:", err)
+		os.Exit(1)
+	}
+	if err := service.Pause(ctx, live.GID); err != nil {
+		fmt.Println("   FAIL: the download could not be paused:", err)
+		os.Exit(1)
+	}
+	if err := service.Resume(ctx, live.GID); err != nil {
+		fmt.Println("   FAIL: the download could not be resumed:", err)
+		os.Exit(1)
+	}
+	fmt.Println("   a download that was still known was paused and resumed by its handle")
+
+	// A download that is still known is removed by the engine's handle
+	// as well.
+	//
+	// The frontend never knows the record's own id: it only knows the
+	// handle the engine gave, and it passes that as the download's id.
+	second, err := service.Add(ctx, downloads.AddRequest{
+		Kind: "http",
+		URI:  server.URL + "/payload.bin",
+		Dir:  dir,
+	})
+	if err != nil {
+		fmt.Println("   FAIL: the download could not be added:", err)
+		os.Exit(1)
+	}
+	if err := service.Remove(ctx, second.GID); err != nil {
+		fmt.Println("   FAIL: the download could not be removed:", err)
+		os.Exit(1)
+	}
+	fmt.Println("   a download that was still known was removed by its handle")
+
 	// The configuration of the frontend survives a write and a read.
 	// It used to keep only the size of the interface and the theme,
 	// so every other setting of the user was lost.
@@ -205,7 +270,7 @@ func main() {
 			os.Exit(1)
 		}
 	}
-	fmt.Println("6. The configuration of the frontend survived the round trip")
+	fmt.Println("7. The configuration of the frontend survived the round trip")
 
 	// The engine's own statistics have to answer.
 	stat, err := service.Stat(ctx)
@@ -213,14 +278,14 @@ func main() {
 		fmt.Println("   FAIL: the statistics could not be read:", err)
 		os.Exit(1)
 	}
-	fmt.Printf("7. The engine answered: %d stopped, %d active\n", stat.NumStopped, stat.NumActive)
+	fmt.Printf("8. The engine answered: %d stopped, %d active\n", stat.NumStopped, stat.NumActive)
 
 	// The sidecar is stopped, and it must not outlive the check.
 	if err := manager.Stop(ctx); err != nil {
 		fmt.Println("   FAIL: the sidecar did not stop:", err)
 		os.Exit(1)
 	}
-	fmt.Println("8. The sidecar stopped")
+	fmt.Println("9. The sidecar stopped")
 
 	fmt.Println("\nEND TO END: PASS")
 }

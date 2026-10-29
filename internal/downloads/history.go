@@ -1,7 +1,9 @@
 package downloads
 
 import (
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -381,7 +383,11 @@ func (s *HistoryStore) findHistoryByGID(gid string) (*core.Record, error) {
 		map[string]any{"gid": gid},
 	)
 	if err != nil {
-		return nil, nil
+		if errors.Is(err, sql.ErrNoRows) {
+			// The download is not in the history.
+			return nil, nil
+		}
+		return nil, fmt.Errorf("look the history entry %q up: %w", gid, err)
 	}
 	return record, nil
 }

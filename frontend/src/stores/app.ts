@@ -149,8 +149,29 @@ export const useAppStore = defineStore('app', () => {
       addTaskForwarder({ manual: true })
       return
     }
+    showLocalAddTaskDialog()
+  }
+
+  /**
+   * Opens an empty add-task dialog for manual URI entry, in this window.
+   *
+   * It is what the forwarder answers, when the dialog lives in the
+   * window that asked for it.
+   */
+  function showLocalAddTaskDialog() {
     clearPendingExternalMetadata()
     addTaskVisible.value = true
+  }
+
+  /**
+   * Puts the items in the pending batch and opens the add-task dialog,
+   * in this window.
+   *
+   * It is what the forwarder answers, when the dialog lives in the
+   * window that asked for it.
+   */
+  function enqueueLocalBatch(items: BatchItem[]): number {
+    return enqueueLocal(items)
   }
 
   /**
@@ -429,6 +450,8 @@ export const useAppStore = defineStore('app', () => {
     enqueueBatch,
     enqueueForwardedItems,
     showAddTaskDialog,
+    showLocalAddTaskDialog,
+    enqueueLocalBatch,
     setAddTaskForwarder,
     hideAddTaskDialog,
     updateAddTaskOptions,

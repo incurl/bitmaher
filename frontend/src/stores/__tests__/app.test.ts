@@ -542,4 +542,75 @@ describe('useAppStore', () => {
       expect(onError).toHaveBeenCalledWith({ Aria2: 'aria2 RPC error [1]: Unsupported URI scheme' })
     })
   })
+
+  /** A batch item for the dialog's pending batch. */
+  function batchItem(source: string) {
+    return {
+      id: source,
+      kind: 'uri' as const,
+      source,
+      displayName: source,
+      payload: source,
+      status: 'pending' as const,
+    }
+  }
+
+  // ── the add-task dialog ────────────────────────────────────────────
+  //
+  // The dialog used to be a window of its own, which BitMaher does not
+  // have: the request was forwarded to a window that was never there,
+  // and nothing happened at all.
+  describe('the add-task dialog', () => {
+    it('opens in this window when there is no forwarder', () => {
+      const store = useAppStore()
+
+      store.showAddTaskDialog()
+
+      expect(store.addTaskVisible).toBe(true)
+    })
+
+    it('opens in this window when the forwarder is the local dialog', () => {
+      const store = useAppStore()
+
+      // This is what the dialog installs when it mounts.
+      store.setAddTaskForwarder((forward) => {
+        if (forward.items?.length) {
+          store.enqueueLocalBatch(forward.items)
+        } else {
+          store.showLocalAddTaskDialog()
+        }
+      })
+
+      store.showAddTaskDialog()
+
+      expect(store.addTaskVisible).toBe(true)
+    })
+
+    it('puts the forwarded items in the batch and opens', () => {
+      const store = useAppStore()
+      store.setAddTaskForwarder((forward) => {
+        if (forward.items?.length) {
+          store.enqueueLocalBatch(forward.items)
+        } else {
+          store.showLocalAddTaskDialog()
+        }
+      })
+
+      store.enqueueBatch([batchItem('https://example.com/a.bin')])
+
+      expect(store.pendingBatch).toHaveLength(1)
+      expect(store.addTaskVisible).toBe(true)
+    })
+
+    it('closes the dialog and forgets the items', () => {
+      const store = useAppStore()
+      store.enqueueLocalBatch([batchItem('https://example.com/a.bin')])
+      expect(store.addTaskVisible).toBe(true)
+
+      store.hideAddTaskDialog()
+
+      expect(store.addTaskVisible).toBe(false)
+      expect(store.pendingBatch).toHaveLength(0)
+    })
+  })
 })

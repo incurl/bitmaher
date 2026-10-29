@@ -502,7 +502,15 @@ func (s *Service) Resume(ctx context.Context, id string) error {
 //
 // The engine refuses to remove a running download, so it is paused
 // first. The downloaded files are left on disk.
+//
+// A download that has come to rest has no record in the list any more:
+// it lives in the history. Removing it means removing it from the
+// history, and the engine has nothing to say about it.
 func (s *Service) Remove(ctx context.Context, id string) error {
+	if removed, err := s.removeFromHistory(id); removed {
+		return err
+	}
+
 	job, client, err := s.resolve(ctx, id)
 	if err != nil {
 		return err
@@ -523,12 +531,46 @@ func (s *Service) Remove(ctx context.Context, id string) error {
 	// does not come back on the next sync.
 	_ = client.RemoveResult(ctx, job.GID)
 
-	if err := s.store.Delete(id); err != nil {
+	// The record is deleted by its own id, which the resolution found.
+	// The handle the caller passed is not the id: the frontend only
+	// ever knows the handle.
+	if err := s.store.Delete(job.ID); err != nil {
 		return err
 	}
 
 	s.info(fmt.Sprintf("the download %q was removed", job.Title))
 	return nil
+}
+
+// removeFromHistory removes a download that has come to rest.
+//
+// The second return value says whether the download was in the history
+// at all: a download that is still running is not, and the caller has
+// to remove it from the engine instead.
+func (s *Service) removeFromHistory(id string) (bool, error) {
+	if s == nil || s.history == nil || id == "" {
+		return false, nil
+	}
+
+	_, found, err := s.history.RecordByGID(id)
+	if err != nil {
+		return false, err
+	}
+	if !found {
+		return false, nil
+	}
+
+	if err := s.history.RemoveRecord(id); err != nil {
+		return true, err
+	}
+
+	// The moment the download was added goes with it: it is what holds
+	// the order of the list, and a download that is not there any more
+	// has no place in it.
+	_ = s.history.RemoveBirths([]string{id})
+
+	s.info(fmt.Sprintf("the history entry %q was removed", id))
+	return true, nil
 }
 
 // Purge removes the finished downloads from the engine and from the
@@ -632,7 +674,15 @@ func (s *Service) resolve(ctx context.Context, id string) (Job, *aria2.Client, e
 		return Job{}, nil, aria2.ErrNotRunning
 	}
 
-	job, err := s.store.Get(id)
+	// The frontend only ever knows the engine's handle, so the handle is
+	// what a download is looked up by. The record's own id is accepted
+	// as well, because the backend's own callers use it.
+	job, err := s.store.GetByGID(id)
+	if err == nil {
+		return job, client, nil
+	}
+
+	job, err = s.store.Get(id)
 	if err != nil {
 		return Job{}, nil, err
 	}

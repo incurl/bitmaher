@@ -13,7 +13,9 @@
 package downloads
 
 import (
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -212,6 +214,10 @@ func (s *Store) Save(job Job) (Job, error) {
 }
 
 // findByGID looks a download up by the engine's handle.
+//
+// A download that is not there is not an error: the record may be
+// about to be created. Any other failure is reported, because a broken
+// lookup is not the same as a missing download.
 func (s *Store) findByGID(gid string) (*core.Record, error) {
 	if gid == "" {
 		return nil, nil
@@ -223,11 +229,29 @@ func (s *Store) findByGID(gid string) (*core.Record, error) {
 		map[string]any{"gid": gid},
 	)
 	if err != nil {
-		// A download that is not there yet is not an error: the
-		// record is about to be created.
-		return nil, nil
+		if errors.Is(err, sql.ErrNoRows) {
+			// The download is not there yet.
+			return nil, nil
+		}
+		return nil, fmt.Errorf("look the download %q up: %w", gid, err)
 	}
 	return record, nil
+}
+
+// GetByGID returns one download by the engine's handle.
+//
+// The frontend only ever knows the handle, so it is what a download is
+// looked up by. A download that is not there is an error, and not an
+// empty one: the caller asked for a download it believes exists.
+func (s *Store) GetByGID(gid string) (Job, error) {
+	record, err := s.findByGID(gid)
+	if err != nil {
+		return Job{}, fmt.Errorf("find the download %q: %w", gid, err)
+	}
+	if record == nil {
+		return Job{}, fmt.Errorf("find the download %q: it is not known", gid)
+	}
+	return recordToJob(record), nil
 }
 
 // Get returns one download by its record id.

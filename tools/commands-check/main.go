@@ -71,6 +71,7 @@ func main() {
 		bitmaherpb.NewSettingsStore(svc.App(), cipher),
 		console.New(),
 		downloads.NewService(manager, downloads.NewStore(svc.App()), nil),
+		bitmaherpb.NewHTTPAuthStore(svc.App(), cipher),
 		dir,
 		dir,
 	)

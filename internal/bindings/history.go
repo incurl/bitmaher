@@ -160,22 +160,27 @@ func (s *AppService) HistoryGetPage(input HistoryPageInput) (HistoryPageView, er
 
 // HistoryGetRecord returns one entry of the history.
 //
-// The second return value reports whether the entry was found.
-func (s *AppService) HistoryGetRecord(gid string) (HistoryRecordView, bool, error) {
+// The answer is a **pointer**, and not a value with a flag beside it:
+// a method that returns more than one value is answered with an array,
+// and the frontend has to take the first element out of it. A download
+// that is not there is a nil pointer, which is the nothing the frontend
+// expects.
+func (s *AppService) HistoryGetRecord(gid string) (*HistoryRecordView, error) {
 	store := s.historyStore()
 	if store == nil {
-		return HistoryRecordView{}, false, nil
+		return nil, nil
 	}
 
 	record, found, err := store.RecordByGID(gid)
 	if err != nil {
-		return HistoryRecordView{}, false, err
+		return nil, err
 	}
 	if !found {
-		return HistoryRecordView{}, false, nil
+		return nil, nil
 	}
 
-	return toHistoryRecordView(record), true, nil
+	view := toHistoryRecordView(record)
+	return &view, nil
 }
 
 // HistoryRemoveRecord removes one entry of the history.

@@ -169,7 +169,47 @@ out of reach of anything that can reach the HTTP endpoint.
 
 **Do not open `app_settings.** It holds the RPC secret and the API key.
 
-## Nook 2: the settings are write-only from the UI's point of view
+## Nook 2: the saved HTTP credentials
+
+The user name and the password that go with a site are metadata, and
+they are in the database like everything else.
+
+The collection is `http_auth`, and it is **closed for reading** as well
+as for writing. The credentials are the backend's business, and the
+frontend asks for the one that matches a URL:
+
+```go
+// A rule that is not set at all is a closed one: PocketBase
+// refuses the request for anybody who is not a superuser.
+credentials.ListRule = nil
+credentials.ViewRule = nil
+```
+
+The password is encrypted at rest, with the same key that protects the
+other secrets. The frontend receives it in the clear, because the caller
+is the download that has to authenticate itself.
+
+The saved credential is the **fallback**, not the override:
+
+```go
+// The options are left alone when the frontend already sent a user
+// name: what the user typed is what the download uses.
+if request.Options["http-user"] != "" {
+    return
+}
+```
+
+The origin is reduced to the site before it is stored, so that a
+credential saved for `https://example.com` is found for
+`https://example.com/downloads/file.zip`:
+
+```go
+// The path, the query and the fragment are dropped: a credential is
+// for a site, not for a page of it.
+return scheme + "://" + host
+```
+
+## Nook 3: the settings are write-only from the UI's point of view
 
 The secrets are encrypted before they are written, and the frontend only ever learns *whether* one
 is set — never its value.
@@ -244,7 +284,7 @@ The lock is around the whole operation. `cipher.AEAD` implementations are safe f
 **when the nonce is unique**, and the nonce comes from `rand.Reader`, so it is. The lock is
 defensive: it makes the whole encrypt-or-decrypt operation atomic with respect to the key.
 
-## Nook 3: a collection is not a table
+## Nook 4: a collection is not a table
 
 PocketBase's `core.Collection` is a **schema object**, not a table. The fields are typed and
 validated:
@@ -296,7 +336,7 @@ Things worth noticing:
 // relation field of the log can point at the downloads.
 ```
 
-## Nook 4: `app.Save` is how the schema changes
+## Nook 5: `app.Save` is how the schema changes
 
 Not `app.RunAppMigrations` — that is for the migration files. A collection is created or changed
 with:
@@ -310,7 +350,7 @@ if err := app.Save(downloads); err != nil {
 `Save` both creates and updates. PocketBase compares the collection with what is in the database and
 writes the difference.
 
-## Nook 5: the JSON field is not a bag of anything
+## Nook 6: the JSON field is not a bag of anything
 
 The `options` field holds the engine options, and the engine's options are **strings**:
 
@@ -322,7 +362,7 @@ func (c *Client) ChangeOption(ctx context.Context, gid string, options map[strin
 So the JSON field holds a `map[string]string`, not a `map[string]any`. The conversion happens in
 the domain layer, and it is deliberate: the engine's vocabulary should not leak into the database.
 
-## Nook 6: the configuration is stored whole, and not interpreted
+## Nook 7: the configuration is stored whole, and not interpreted
 
 The frontend keeps all of its configuration in one value of the key-value store. The backend stores
 it as one JSON blob under `app.config`:
@@ -351,7 +391,7 @@ apply it to the window:
 config["uiScale"] = float64(ui.Zoom) / 100
 ```
 
-## Nook 7: `ResetBootstrapState` is the way to close it
+## Nook 8: `ResetBootstrapState` is the way to close it
 
 ```go
 // Close releases the resources PocketBase holds: the database
@@ -375,7 +415,7 @@ Two things to notice:
    reclaims everything. In the tests and in the server mode, the process outlives the service, so
    the connections have to be released by hand.
 
-## Nook 8: the database is SQLite, and it is locked
+## Nook 9: the database is SQLite, and it is locked
 
 Everything lives in `pb_data/` next to the executable:
 
@@ -403,7 +443,7 @@ BITMAHER_DATA_DIR=/tmp/my-test-data ./bin/bitmaher
 **Never run two instances against the same data directory.** The second one will corrupt the
 first's writes, or fail to start.
 
-## Nook 9: `DefaultDataDir` is next to the executable
+## Nook 10: `DefaultDataDir` is next to the executable
 
 ```go
 func DefaultDataDir() string {
@@ -420,7 +460,7 @@ portable: copy the directory, and the application brings its data with it.
 It is also why `bin/pb_data` exists in this repository — the binary is in `bin/`, so its data is
 in `bin/pb_data/`.
 
-## Nook 10: the collection names are part of the vocabulary
+## Nook 11: the collection names are part of the vocabulary
 
 The names in the code, in the migrations, in the JSON, and in the documentation are the same:
 
@@ -431,12 +471,13 @@ The names in the code, in the migrations, in the JSON, and in the documentation 
 | `bt_presets` | The saved download presets |
 | `download_history` | The downloads that have come to rest |
 | `task_birth` | The moment every download was added |
+| `http_auth` | The saved HTTP credentials: the user name and the password of a site |
 | `app_settings` | The settings and the configuration |
 
 `CONTEXT.md` has the full vocabulary, including the words to avoid. The rule there — the **Avoid**
 synonyms — is a signal that the term is not what you want.
 
-## Nook 11: the download record is keyed by the gid
+## Nook 12: the download record is keyed by the gid
 
 ```go
 &core.TextField{Name: "gid", Required: true, Max: 100},

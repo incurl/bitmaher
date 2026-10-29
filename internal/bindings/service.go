@@ -19,6 +19,9 @@ type AppService struct {
 	pb       *pocketbase.Service
 	settings *pocketbase.SettingsStore
 	console  *console.Log
+	// httpAuth keeps the saved HTTP credentials. The password is
+	// encrypted at rest, and only the backend ever sees it.
+	httpAuth *pocketbase.HTTPAuthStore
 	// downloads drives the Aria2-Next sidecar and keeps the download
 	// records.
 	downloads *downloads.Service
@@ -68,6 +71,7 @@ func NewAppService(
 	settings *pocketbase.SettingsStore,
 	log *console.Log,
 	downloadService *downloads.Service,
+	httpAuth *pocketbase.HTTPAuthStore,
 	dataDir string,
 	downloadDir string,
 ) *AppService {
@@ -76,6 +80,7 @@ func NewAppService(
 		settings:    settings,
 		console:     log,
 		downloads:   downloadService,
+		httpAuth:    httpAuth,
 		dataDir:     dataDir,
 		downloadDir: downloadDir,
 	}

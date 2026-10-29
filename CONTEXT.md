@@ -114,6 +114,12 @@ A value the backend reads and the frontend never sees: the engine's RPC secret a
 before it is written, and the key is a `0600` file in the data directory. The frontend only ever learns *whether* one is set.
 _Avoid_: Token, Key, Password
 
+**Credential**:
+The user name and the password that go with a site, in the `http_auth` collection. The password is encrypted at rest, and the
+collection is closed for reading. The saved credential is the *fallback* for a download: what the user typed is what the
+download uses.
+_Avoid_: Secret, Token, Auth
+
 **RPC secret**:
 The token the engine authenticates its caller with. It is generated once, on the first run, and stored encrypted. It never leaves
 the machine and is never sent to the frontend.

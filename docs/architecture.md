@@ -222,6 +222,47 @@ The answers are therefore two:
 
 The command map knows which of the two each command wants.
 
+## PocketBase is the only record of truth
+
+Every piece of metadata the application keeps is in the database. There
+is no second place where it could be, and no file that holds it.
+
+| What | Where | Written by |
+| --- | --- | --- |
+| The configuration of the frontend | `app_settings`, key `app.config` | `StoreWrite` |
+| The size of the interface and the theme | `app_settings`, key `ui` | `StoreWrite` |
+| The RPC secret of the engine | `app_settings`, key `app.aria2_rpc_secret` | `startSidecar` |
+| The settings of the engine | `app_settings`, key `app.aria2` | `RefreshRuntimeConfig` |
+| The key of the remote API | `app_settings`, key `app.api_key` | `SaveCredentials` |
+| The saved HTTP credentials | `http_auth` | `HTTPAuthSave` |
+| The downloads that are running | `download_jobs` | `downloads.Sync` |
+| The downloads that have come to rest | `download_history` | `downloads.Sync` |
+| The moment every download was added | `task_birth` | `downloads.Sync` |
+| The saved presets | `bt_presets` | `SavePreset` |
+| The log of a download | `job_logs` | `downloads` |
+
+Two things are **not** in the database, and they are not metadata of
+the application:
+
+- **The encryption key** (`pb_data/.bitmaher_key`). It is the key of
+  the database, and a database cannot hold its own key.
+- **The session file of the engine** (`pb_data/aria2/session.txt`). It
+  is the engine's own file, in the engine's own format. The application
+  keeps the record of the downloads in `download_jobs`, and the engine
+  keeps the record of what it is doing in the file it wrote.
+
+### The saved HTTP credentials
+
+They are the user name and the password that go with a site. The
+password is encrypted at rest with the key of the application, and the
+collection is **closed for reading** as well as for writing: the
+credentials are the backend's business, and the frontend asks for the
+one that matches a URL.
+
+The saved credential is the **fallback**, not the override. A download
+that the user gave a user name of uses that one; a download that did
+not get one uses the saved credential of the site, if there is one.
+
 ## The access rules are the write gate
 
 The scaffold sets `ListRule` and `ViewRule` to `""` (public read) on `jobs` and `artifacts`, and leaves `app_settings` without

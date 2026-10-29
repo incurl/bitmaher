@@ -28,7 +28,7 @@ func newTestService(t *testing.T) *AppService {
 
 	log := console.New()
 
-	return NewAppService(pb, settings, log, nil, pb.DataDir(), "")
+	return NewAppService(pb, settings, log, nil, pocketbase.NewHTTPAuthStore(pb.App(), cipher), pb.DataDir(), "")
 }
 
 // TestSettingsNeverExposeTheSecret verifies that the API key is not

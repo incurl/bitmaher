@@ -235,14 +235,54 @@ func main() {
 	}
 	fmt.Println("   a download that was still known was removed by its handle")
 
-	// The configuration of the frontend survives a write and a read.
-	// It used to keep only the size of the interface and the theme,
-	// so every other setting of the user was lost.
+	// The cipher protects the secrets of the application.
 	cipher, err := bitmaherpb.NewCipher(svc.DataDir())
 	if err != nil {
 		fmt.Println("   FAIL: the cipher could not be created:", err)
 		os.Exit(1)
 	}
+
+	// The saved HTTP credentials survive a write and a read, and the
+	// password is not in the database in the clear.
+	//
+	// The database is the record of truth: what the user saved is what
+	// the next download reads.
+	httpAuth := bitmaherpb.NewHTTPAuthStore(svc.App(), cipher)
+	if err := httpAuth.Save("https://example.com", "peter", "hunter2"); err != nil {
+		fmt.Println("   FAIL: the credential could not be saved:", err)
+		os.Exit(1)
+	}
+	credential, wasFound, err := httpAuth.Find("https://example.com")
+	if err != nil {
+		fmt.Println("   FAIL: the credential could not be read:", err)
+		os.Exit(1)
+	}
+	if !wasFound {
+		fmt.Println("   FAIL: the credential was not found")
+		os.Exit(1)
+	}
+	if credential.Username != "peter" || credential.Password != "hunter2" {
+		fmt.Printf("   FAIL: the credential is %q/%q\n", credential.Username, credential.Password)
+		os.Exit(1)
+	}
+	credentialRecords, err := svc.App().FindAllRecords(bitmaherpb.CollectionHTTPAuth)
+	if err != nil {
+		fmt.Println("   FAIL: the records could not be read:", err)
+		os.Exit(1)
+	}
+	if len(credentialRecords) != 1 {
+		fmt.Printf("   FAIL: the collection holds %d records, want 1\n", len(credentialRecords))
+		os.Exit(1)
+	}
+	if credentialRecords[0].GetString("password") == "hunter2" {
+		fmt.Println("   FAIL: the password is stored in the clear")
+		os.Exit(1)
+	}
+	fmt.Println("7. The saved credential is in the database, and encrypted")
+
+	// The configuration of the frontend survives a write and a read.
+	// It used to keep only the size of the interface and the theme,
+	// so every other setting of the user was lost.
 	settings := bitmaherpb.NewSettingsStore(svc.App(), cipher)
 	configuration := map[string]any{
 		"uiScale":          1.25,
@@ -270,7 +310,7 @@ func main() {
 			os.Exit(1)
 		}
 	}
-	fmt.Println("7. The configuration of the frontend survived the round trip")
+	fmt.Println("8. The configuration of the frontend survived the round trip")
 
 	// The engine's own statistics have to answer.
 	stat, err := service.Stat(ctx)
@@ -278,14 +318,14 @@ func main() {
 		fmt.Println("   FAIL: the statistics could not be read:", err)
 		os.Exit(1)
 	}
-	fmt.Printf("8. The engine answered: %d stopped, %d active\n", stat.NumStopped, stat.NumActive)
+	fmt.Printf("9. The engine answered: %d stopped, %d active\n", stat.NumStopped, stat.NumActive)
 
 	// The sidecar is stopped, and it must not outlive the check.
 	if err := manager.Stop(ctx); err != nil {
 		fmt.Println("   FAIL: the sidecar did not stop:", err)
 		os.Exit(1)
 	}
-	fmt.Println("9. The sidecar stopped")
+	fmt.Println("10. The sidecar stopped")
 
 	fmt.Println("\nEND TO END: PASS")
 }

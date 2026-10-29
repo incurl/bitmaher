@@ -214,6 +214,14 @@ func (s *AppService) AddDownload(ctx context.Context, request AddDownloadRequest
 		domain.Dir = settings.DownloadDir
 	}
 
+	// The saved credential of the site is used when the frontend did
+	// not send one.
+	//
+	// The database is the record of truth: the user saved the
+	// credential once, and every download of that site finds it
+	// without them typing it again.
+	s.applySavedCredential(&domain)
+
 	job, err := s.downloads.Add(ctx, domain)
 	if err != nil {
 		return DownloadView{}, err
@@ -233,6 +241,40 @@ func (s *AppService) AddDownload(ctx context.Context, request AddDownloadRequest
 	}
 
 	return toView(job), nil
+}
+
+// applySavedCredential puts the saved credential of the site into the
+// options of the download.
+//
+// The options are left alone when the frontend already sent a user
+// name: what the user typed is what the download uses.
+func (s *AppService) applySavedCredential(request *downloads.AddRequest) {
+	if s == nil || s.httpAuth == nil || request == nil {
+		return
+	}
+	if request.Options == nil {
+		request.Options = map[string]string{}
+	}
+	if request.Options["http-user"] != "" {
+		return
+	}
+	if request.Kind != downloads.KindHTTP {
+		return
+	}
+
+	credential, found, err := s.httpAuth.Find(request.URI)
+	if err != nil {
+		if s.console != nil {
+			s.console.Warn("downloads", "the saved credential could not be read: "+err.Error())
+		}
+		return
+	}
+	if !found {
+		return
+	}
+
+	request.Options["http-user"] = credential.Username
+	request.Options["http-passwd"] = credential.Password
 }
 
 // PauseDownload pauses a download.

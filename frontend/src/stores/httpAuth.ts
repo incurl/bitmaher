@@ -16,7 +16,7 @@ export const useHttpAuthStore = defineStore('httpAuth', () => {
     await database.init()
     return invoke<HttpAuthCredential | null>('http_auth_find', { url })
   }
-  async function markUsed(id: number): Promise<void> {
+  async function markUsed(id: string): Promise<void> {
     await database.init()
     await invoke('http_auth_mark_used', { id })
   }

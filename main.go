@@ -118,6 +118,11 @@ func run() error {
 	// step with it.
 	downloadService := downloads.NewService(sidecar, downloads.NewStore(pbService.App()), consoleLog)
 
+	// The saved HTTP credentials. They are kept in the database, with
+	// the password encrypted, so that the user does not have to type
+	// them again.
+	httpAuth := pocketbase.NewHTTPAuthStore(pbService.App(), cipher)
+
 	// The service knows where the data lives, because the frontend asks
 	// the backend: the webview has no access to the disk.
 	appService := bindings.NewAppService(
@@ -125,6 +130,7 @@ func run() error {
 		settings,
 		consoleLog,
 		downloadService,
+		httpAuth,
 		pbService.DataDir(),
 		downloadDir(settings),
 	)

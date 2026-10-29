@@ -257,15 +257,32 @@ interface, text included.
 
 ## What Is Persisted, and Where
 
+**PocketBase is the only record of truth.** Every piece of metadata the application keeps is in the database: there is no
+second place where it could be, and no file that holds it.
+
 Everything the user would miss if it were lost survives a restart, and each of them has its own place:
 
 | What | Where | Written by |
 | --- | --- | --- |
 | The configuration of the frontend | `app_settings`, under the `app.config` key | `StoreWrite` |
 | The size of the interface and the theme | `app_settings`, under the `ui` key | `StoreWrite` |
+| The RPC secret of the engine | `app_settings`, under the `app.aria2_rpc_secret` key | `startSidecar` |
+| The settings of the engine | `app_settings`, under the `app.aria2` key | `RefreshRuntimeConfig` |
+| The key of the remote API | `app_settings`, under the `app.api_key` key | `SaveCredentials` |
+| The saved HTTP credentials | `http_auth` | `HTTPAuthSave` |
 | The downloads that are running | `download_jobs` | `downloads.Sync` |
 | The downloads that have come to rest | `download_history` | `downloads.Sync` |
 | The moment every download was added | `task_birth` | `downloads.Sync` |
+| The saved presets | `bt_presets` | `SavePreset` |
+
+**Two things are not in the database, and they are not metadata of the application.** The encryption key
+(`pb_data/.bitmaher_key`) is the key of the database, and a database cannot hold its own key. The session file of the
+engine (`pb_data/aria2/session.txt`) is the engine's own file, in the engine's own format: the application keeps the
+record of the downloads in `download_jobs`, and the engine keeps the record of what it is doing in the file it wrote.
+
+**The saved HTTP credentials are encrypted at rest**, with the key of the application, and the collection is closed for
+reading as well as for writing. The saved credential is the **fallback**, not the override: a download that the user gave
+a user name of uses that one.
 
 **The configuration of the frontend is one record.** The ported frontend keeps all of it in one value of the key-value
 store, so the backend stores it as one JSON blob under `app.config`. The backend does not interpret it: a field it knows

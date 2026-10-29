@@ -191,6 +191,19 @@ export function resolveCommand(
     case 'history_check_integrity':
       return { method: APP_SERVICE + '.DatabaseIntegrityCheck', args: [] };
 
+    // --- the saved HTTP credentials --------------------------------------------
+    // The credentials are the backend's business: the password is
+    // encrypted at rest, and the collection is closed for reading.
+    case 'http_auth_save':
+      return {
+        method: APP_SERVICE + '.HTTPAuthSave',
+        args: [stringOf(args, 'url'), stringOf(args, 'username'), stringOf(args, 'password')],
+      };
+    case 'http_auth_find':
+      return { method: APP_SERVICE + '.HTTPAuthFind', args: [stringOf(args, 'url')] };
+    case 'http_auth_mark_used':
+      return { method: APP_SERVICE + '.HTTPAuthMarkUsed', args: [stringOf(args, 'id')] };
+
     // --- the window ----------------------------------------------------------
     case 'set_window_decorations':
       return {
@@ -398,9 +411,6 @@ const NEUTRAL_COMMANDS: Record<string, 'boolean' | 'value'> = {
   // The proxy, the http authentication and the system.
   get_system_proxy: 'value',
   normalize_proxy_bypass: 'value',
-  http_auth_find: 'value',
-  http_auth_save: 'value',
-  http_auth_mark_used: 'value',
   get_association_status: 'value',
   get_engine_conf_path: 'value',
   restart_http_api: 'value',

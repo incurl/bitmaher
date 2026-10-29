@@ -658,7 +658,13 @@ export interface ExternalDownloadInput extends ExternalDownloadContext {
 
 /** Saved HTTP Basic authentication credential scoped to a normalized URL origin. */
 export interface HttpAuthCredential {
-  id: number
+  /**
+   * The identifier of the credential.
+   *
+   * It is a string, and not a number: the record lives in PocketBase,
+   * and PocketBase's identifiers are strings.
+   */
+  id: string
   origin: string
   username: string
   password: string

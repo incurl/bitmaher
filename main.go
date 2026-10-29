@@ -217,9 +217,14 @@ func run() error {
 	// The size of the interface is the zoom of the webview. It is read
 	// before the window is created, so that the interface appears at the
 	// size the user chose, and not at the default one.
+	//
+	// The configuration is the record of truth, and it is what is read
+	// here. The `ui` record is the copy the backend keeps for itself.
 	zoom := 1.0
-	if ui, err := settings.GetUI(); err == nil && ui.Zoom > 0 {
-		zoom = float64(ui.Zoom) / 100
+	if config, found, err := settings.GetAppConfig(); err == nil && found {
+		if scale, ok := config["uiScale"].(float64); ok && scale > 0 {
+			zoom = scale
+		}
 	}
 
 	// The window is frameless on Windows and Linux, because the

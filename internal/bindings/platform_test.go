@@ -55,10 +55,11 @@ func TestTheInterfaceSizeIsClamped(t *testing.T) {
 // a percentage. The store is where the two meet.
 func TestThePreferencesOfTheFrontendAreRead(t *testing.T) {
 	service := newTestService(t)
-	if err := service.settings.SetUI(pocketbase.UI{Zoom: 110, Theme: "dark"}); err != nil {
-		t.Fatalf("store the preferences: %v", err)
-	}
-	if err := service.settings.SetAppConfig(map[string]any{"dir": "/downloads"}); err != nil {
+	if err := service.StoreWrite("config.json", "preferences", map[string]any{
+		"uiScale": 1.1,
+		"theme":   "dark",
+		"dir":     "/downloads",
+	}); err != nil {
 		t.Fatalf("store the configuration: %v", err)
 	}
 
@@ -207,5 +208,157 @@ func TestTheNeutralAnswersAreFalsy(t *testing.T) {
 	// empty object, and an empty object is true in JavaScript.
 	if value := service.NeutralValue(); value != nil {
 		t.Errorf("the neutral value is %v, want nothing", value)
+	}
+}
+
+// TestTheTwoRecordsOfTheInterfaceCannotDisagree verifies that the
+// configuration and the `ui` record hold the same size of the
+// interface.
+//
+// The configuration is the record of truth, and the `ui` record is the
+// copy the backend keeps for itself. A copy that is read over the
+// original would be able to disagree with it, and the size of the
+// interface would then depend on which of them the answer came from.
+func TestTheTwoRecordsOfTheInterfaceCannotDisagree(t *testing.T) {
+	service := newTestService(t)
+
+	if err := service.StoreWrite("config.json", "preferences", map[string]any{
+		"uiScale": 1.25,
+		"theme":   "light",
+		"locale":  "de",
+	}); err != nil {
+		t.Fatalf("write the store: %v", err)
+	}
+
+	// The copy holds the size of the interface.
+	ui, err := service.settings.GetUI()
+	if err != nil {
+		t.Fatalf("read the interface preferences: %v", err)
+	}
+	if ui.Zoom != 125 {
+		t.Errorf("the zoom of the copy is %d, want 125", ui.Zoom)
+	}
+	if ui.Theme != "light" {
+		t.Errorf("the theme of the copy is %q, want light", ui.Theme)
+	}
+
+	// The original holds it too, and the store hands it back as it is.
+	values, err := service.StoreRead("config.json")
+	if err != nil {
+		t.Fatalf("read the store: %v", err)
+	}
+	preferences, ok := values["preferences"].(map[string]any)
+	if !ok {
+		t.Fatalf("the store holds no preferences: %v", values)
+	}
+	if preferences["uiScale"] != 1.25 {
+		t.Errorf("the size of the interface is %v, want 1.25", preferences["uiScale"])
+	}
+	if preferences["theme"] != "light" {
+		t.Errorf("the theme is %v, want light", preferences["theme"])
+	}
+	if preferences["locale"] != "de" {
+		t.Errorf("the locale is %v, want de", preferences["locale"])
+	}
+}
+
+// TestTheSizeOfTheInterfaceIsReadFromTheConfiguration verifies that
+// the store hands the frontend the size it stored.
+//
+// The backend keeps a copy of the size for itself, and the copy is
+// never read over the configuration.
+func TestTheSizeOfTheInterfaceIsReadFromTheConfiguration(t *testing.T) {
+	service := newTestService(t)
+
+	if err := service.StoreWrite("config.json", "preferences", map[string]any{
+		"uiScale": 1.5,
+	}); err != nil {
+		t.Fatalf("write the store: %v", err)
+	}
+
+	values, err := service.StoreRead("config.json")
+	if err != nil {
+		t.Fatalf("read the store: %v", err)
+	}
+	preferences := values["preferences"].(map[string]any)
+	if preferences["uiScale"] != 1.5 {
+		t.Errorf("the size of the interface is %v, want 1.5", preferences["uiScale"])
+	}
+}
+
+// TestTheThemeThatFollowsTheSystemIsKept verifies that the theme
+// "auto" does not empty the copy.
+//
+// The frontend decides what "auto" looks like, and the copy keeps the
+// last concrete theme, so that the backend has one to apply before the
+// interface is loaded.
+func TestTheThemeThatFollowsTheSystemIsKept(t *testing.T) {
+	service := newTestService(t)
+
+	if err := service.StoreWrite("config.json", "preferences", map[string]any{
+		"uiScale": 1.0,
+		"theme":   "dark",
+	}); err != nil {
+		t.Fatalf("write the store: %v", err)
+	}
+	if err := service.StoreWrite("config.json", "preferences", map[string]any{
+		"uiScale": 1.0,
+		"theme":   "auto",
+	}); err != nil {
+		t.Fatalf("write the store: %v", err)
+	}
+
+	ui, err := service.settings.GetUI()
+	if err != nil {
+		t.Fatalf("read the interface preferences: %v", err)
+	}
+	if ui.Theme != "dark" {
+		t.Errorf("the theme of the copy is %q, want the last concrete one", ui.Theme)
+	}
+
+	// The configuration holds what the frontend stored.
+	values, err := service.StoreRead("config.json")
+	if err != nil {
+		t.Fatalf("read the store: %v", err)
+	}
+	preferences := values["preferences"].(map[string]any)
+	if preferences["theme"] != "auto" {
+		t.Errorf("the theme is %v, want auto", preferences["theme"])
+	}
+}
+
+// TestTheInterfacePreferencesAreStoredTogether verifies that the
+// preferences that the backend owns are written to both records.
+//
+// The `ui` record is written on its own by the backend, and it would
+// be able to leave the configuration behind.
+func TestTheInterfacePreferencesAreStoredTogether(t *testing.T) {
+	service := newTestService(t)
+
+	if err := service.SaveUI(pocketbase.UI{Zoom: 150, Theme: "light"}); err != nil {
+		t.Fatalf("save the interface preferences: %v", err)
+	}
+
+	ui, err := service.settings.GetUI()
+	if err != nil {
+		t.Fatalf("read the interface preferences: %v", err)
+	}
+	if ui.Zoom != 150 {
+		t.Errorf("the zoom is %d, want 150", ui.Zoom)
+	}
+
+	values, err := service.StoreRead("config.json")
+	if err != nil {
+		t.Fatalf("read the store: %v", err)
+	}
+	preferences, ok := values["preferences"].(map[string]any)
+	if !ok {
+		t.Fatalf("the store holds no preferences: %v", values)
+	}
+	if preferences["uiScale"] != 1.5 {
+		t.Errorf("the size of the interface is %v, want 1.5", preferences["uiScale"])
+	}
+	if preferences["theme"] != "light" {
+		t.Errorf("the theme is %v, want light", preferences["theme"])
 	}
 }

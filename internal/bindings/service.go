@@ -184,7 +184,28 @@ func (s *AppService) SaveCredentials(apiKey, baseURL string) error {
 }
 
 // SaveUI stores the interface preferences, including the zoom level.
+//
+// The preferences are stored in the configuration of the frontend as
+// well, because the configuration is the record of truth: the `ui`
+// record is a copy of it, and a copy that is written on its own would
+// be able to disagree with the original.
 func (s *AppService) SaveUI(ui pocketbase.UI) error {
+	config, _, err := s.settings.GetAppConfig()
+	if err != nil {
+		return err
+	}
+	if config == nil {
+		config = map[string]any{}
+	}
+
+	config["uiScale"] = float64(ui.Zoom) / 100
+	if ui.Theme != "" {
+		config["theme"] = ui.Theme
+	}
+
+	if err := s.settings.SetAppConfig(config); err != nil {
+		return err
+	}
 	return s.settings.SetUI(ui)
 }
 

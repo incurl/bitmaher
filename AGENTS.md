@@ -286,8 +286,12 @@ a user name of uses that one.
 
 **The configuration of the frontend is one record.** The ported frontend keeps all of it in one value of the key-value
 store, so the backend stores it as one JSON blob under `app.config`. The backend does not interpret it: a field it knows
-nothing about still survives a restart. The `ui` record is separate, because the backend owns the size of the interface
-and applies it to the window.
+nothing about still survives a restart.
+
+**The `ui` record is a copy, and not a second source of truth.** The backend keeps it because it owns the size of the
+interface: it applies the size to the window, and it needs it before the interface is loaded. It is written **from**
+`app.config`, and it is never read **over** it. The two are reconciled by the migration `1735000000_bitmaher_ui_reconcile.go`,
+and the configuration wins.
 
 **The moment a download was added never changes.** It is written the first time the engine is seen, and it is what holds
 the order of the list stable across a restart. Without it the order would follow the order the engine happens to

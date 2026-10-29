@@ -228,9 +228,13 @@ const storePreferencesKey = "preferences"
 // record.
 //
 // The whole configuration of the frontend comes back, as it was
-// stored. The size of the interface is the one preference the backend
-// owns, so it is refreshed from the `ui` record: the backend is the
-// one that applies it to the window, and the two have to agree.
+// stored.
+//
+// The configuration is the record of truth, and it is read as it is.
+// The `ui` record is a copy the backend keeps for itself, and it is
+// never read over the configuration: the two would be able to
+// disagree, and the size of the interface would then depend on which
+// of them the answer came from.
 //
 // A configuration that was never stored comes back empty, so that the
 // frontend writes its own defaults rather than the ones of the
@@ -246,15 +250,6 @@ func (s *AppService) StoreRead(name string) (map[string]any, error) {
 			storePreferencesKey: map[string]any{},
 		}, nil
 	}
-
-	ui, err := s.settings.GetUI()
-	if err != nil {
-		return nil, err
-	}
-
-	// The size of the interface is stored as a percentage and handed
-	// to the frontend as the factor it works with.
-	config["uiScale"] = float64(ui.Zoom) / 100
 
 	return map[string]any{
 		storePreferencesKey: config,
@@ -273,9 +268,17 @@ func (s *AppService) StoreReadValue(name, key string) (any, error) {
 // StoreWrite writes one value of a store.
 //
 // The whole configuration of the frontend comes as one record, and it
-// is stored as it is. The interface preferences are also written to
-// the `ui` record, because the backend owns them: it is the one that
-// applies the size of the interface to the window.
+// is stored as it is.
+//
+// The `ui` record is written from it, and not the other way round. The
+// configuration is the record of truth; the `ui` record is the copy the
+// backend keeps for itself, because it is the one that applies the
+// size of the interface to the window, and it needs the size before
+// the interface is loaded.
+//
+// A record that is written from the configuration and a record that is
+// read over it would be able to disagree. The size of the interface
+// would then depend on which of them the answer came from.
 func (s *AppService) StoreWrite(name, key string, value any) error {
 	if key != storePreferencesKey {
 		return nil
@@ -342,12 +345,20 @@ func (s *AppService) RefreshRuntimeConfig() error {
 		return nil
 	}
 
-	ui, err := s.settings.GetUI()
+	// The size of the interface is read from the configuration, which
+	// is the record of truth. The `ui` record is a copy of it, and the
+	// copy is not read over the original.
+	config, found, err := s.settings.GetAppConfig()
 	if err != nil {
 		return err
 	}
+	if !found {
+		return nil
+	}
 
-	s.applyZoom(ui.Zoom)
+	if scale, ok := config["uiScale"].(float64); ok {
+		s.applyZoom(int(math.Round(scale * 100)))
+	}
 	return nil
 }
 
@@ -413,8 +424,18 @@ func mergeUI(current pocketbase.UI, values map[string]any) (pocketbase.UI, error
 		}
 		updated.Zoom = zoom
 	}
-	if theme, ok := values["theme"].(string); ok && (theme == "light" || theme == "dark") {
-		updated.Theme = theme
+	// The theme of the interface follows the system when it is "auto",
+	// and the frontend decides what "auto" looks like. The record keeps
+	// the last concrete theme, so that the backend has one to apply
+	// before the interface is loaded.
+	if theme, ok := values["theme"].(string); ok {
+		switch theme {
+		case "light", "dark":
+			updated.Theme = theme
+		case "auto":
+			// The theme follows the system: the concrete one is
+			// kept, and the frontend reads the system itself.
+		}
 	}
 
 	return updated, nil

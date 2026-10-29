@@ -209,7 +209,51 @@ credential saved for `https://example.com` is found for
 return scheme + "://" + host
 ```
 
-## Nook 3: the settings are write-only from the UI's point of view
+## Nook 3: the `ui` record is a copy, and not a second source of truth
+
+The backend keeps the size of the interface and the theme in a record
+of their own, because it applies the size to the window and needs it
+before the interface is loaded.
+
+It used to be read **over** the configuration, which made the two
+disagree about which one won:
+
+- the **size** came from the `ui` record, as a percentage;
+- the **theme** came from the configuration.
+
+A database written before the rule could hold two different sizes, and
+the interface would show whichever one the answer happened to come
+from.
+
+The rule now:
+
+> The configuration is the record of truth. The `ui` record is written
+> **from** it, and it is never read **over** it.
+
+```go
+// The configuration is the record of truth, and it is read as it is.
+// The `ui` record is a copy the backend keeps for itself, and it is
+// never read over the configuration.
+return map[string]any{
+    storePreferencesKey: config,
+}, nil
+```
+
+And the copy is brought into line for the databases that were written
+before, by the migration that reconciles the two records.
+
+There is a second trap here: the frontend's theme can be `auto`, which
+means "follow the system". A merge that only accepts `light` and
+`dark` **drops** it, and the copy ends up with a theme the user never
+chose.
+
+```go
+case "auto":
+    // The theme follows the system: the concrete one is
+    // kept, and the frontend reads the system itself.
+```
+
+## Nook 4: the settings are write-only from the UI's point of view
 
 The secrets are encrypted before they are written, and the frontend only ever learns *whether* one
 is set — never its value.
@@ -284,7 +328,7 @@ The lock is around the whole operation. `cipher.AEAD` implementations are safe f
 **when the nonce is unique**, and the nonce comes from `rand.Reader`, so it is. The lock is
 defensive: it makes the whole encrypt-or-decrypt operation atomic with respect to the key.
 
-## Nook 4: a collection is not a table
+## Nook 5: a collection is not a table
 
 PocketBase's `core.Collection` is a **schema object**, not a table. The fields are typed and
 validated:
@@ -336,7 +380,7 @@ Things worth noticing:
 // relation field of the log can point at the downloads.
 ```
 
-## Nook 5: `app.Save` is how the schema changes
+## Nook 6: `app.Save` is how the schema changes
 
 Not `app.RunAppMigrations` — that is for the migration files. A collection is created or changed
 with:
@@ -350,7 +394,7 @@ if err := app.Save(downloads); err != nil {
 `Save` both creates and updates. PocketBase compares the collection with what is in the database and
 writes the difference.
 
-## Nook 6: the JSON field is not a bag of anything
+## Nook 7: the JSON field is not a bag of anything
 
 The `options` field holds the engine options, and the engine's options are **strings**:
 
@@ -362,7 +406,7 @@ func (c *Client) ChangeOption(ctx context.Context, gid string, options map[strin
 So the JSON field holds a `map[string]string`, not a `map[string]any`. The conversion happens in
 the domain layer, and it is deliberate: the engine's vocabulary should not leak into the database.
 
-## Nook 7: the configuration is stored whole, and not interpreted
+## Nook 8: the configuration is stored whole, and not interpreted
 
 The frontend keeps all of its configuration in one value of the key-value store. The backend stores
 it as one JSON blob under `app.config`:
@@ -391,7 +435,7 @@ apply it to the window:
 config["uiScale"] = float64(ui.Zoom) / 100
 ```
 
-## Nook 8: `ResetBootstrapState` is the way to close it
+## Nook 9: `ResetBootstrapState` is the way to close it
 
 ```go
 // Close releases the resources PocketBase holds: the database
@@ -415,7 +459,7 @@ Two things to notice:
    reclaims everything. In the tests and in the server mode, the process outlives the service, so
    the connections have to be released by hand.
 
-## Nook 9: the database is SQLite, and it is locked
+## Nook 10: the database is SQLite, and it is locked
 
 Everything lives in `pb_data/` next to the executable:
 
@@ -443,7 +487,7 @@ BITMAHER_DATA_DIR=/tmp/my-test-data ./bin/bitmaher
 **Never run two instances against the same data directory.** The second one will corrupt the
 first's writes, or fail to start.
 
-## Nook 10: `DefaultDataDir` is next to the executable
+## Nook 11: `DefaultDataDir` is next to the executable
 
 ```go
 func DefaultDataDir() string {
@@ -460,7 +504,7 @@ portable: copy the directory, and the application brings its data with it.
 It is also why `bin/pb_data` exists in this repository — the binary is in `bin/`, so its data is
 in `bin/pb_data/`.
 
-## Nook 11: the collection names are part of the vocabulary
+## Nook 12: the collection names are part of the vocabulary
 
 The names in the code, in the migrations, in the JSON, and in the documentation are the same:
 
@@ -477,7 +521,7 @@ The names in the code, in the migrations, in the JSON, and in the documentation 
 `CONTEXT.md` has the full vocabulary, including the words to avoid. The rule there — the **Avoid**
 synonyms — is a signal that the term is not what you want.
 
-## Nook 12: the download record is keyed by the gid
+## Nook 13: the download record is keyed by the gid
 
 ```go
 &core.TextField{Name: "gid", Required: true, Max: 100},

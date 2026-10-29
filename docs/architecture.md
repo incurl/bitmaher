@@ -148,8 +148,13 @@ to the speed limits. The backend stores that record as it is, under the `app.con
 stored whole and handed back whole, so a field the backend knows nothing about still survives a restart.
 
 The size of the interface is the one exception, because the backend owns it: it is what the zoom of the window is. It is
-therefore stored twice — in the `ui` record, as the percentage a person reads, and in the configuration, as the factor the
-frontend works with. The two are written together and read back together, so they cannot drift apart.
+therefore also kept in the `ui` record, as the percentage a person reads.
+
+**The `ui` record is a copy, and not a second source of truth.** It is written **from** the configuration, and it is never
+read **over** it. The read used to prefer the `ui` record for the size of the interface and the configuration for the
+theme, so the two disagreed about which one won — and a database that was written before the rule existed could hold two
+different sizes. The configuration is now the only one that is read, and the migration
+`1735000000_bitmaher_ui_reconcile.go` brings the copy into line for the databases that were written before.
 
 The store used to keep only `uiScale` and `theme`, and drop the other 141 fields. Every setting the user had changed was
 gone on the next start.

@@ -30,6 +30,8 @@ type Service struct {
 	manager *aria2.Manager
 	// store keeps the records.
 	store *Store
+	// history keeps what the user has already downloaded.
+	history *HistoryStore
 	// log records what happened, for the debug console.
 	log Logger
 
@@ -64,8 +66,20 @@ func NewService(manager *aria2.Manager, store *Store, log Logger) *Service {
 	return &Service{
 		manager: manager,
 		store:   store,
+		history: NewHistoryStore(store.app),
 		log:     log,
 	}
+}
+
+// History returns the history store.
+//
+// It is exposed so that the binding layer can reach the history
+// without the service having to grow a method for every operation.
+func (s *Service) History() *HistoryStore {
+	if s == nil {
+		return nil
+	}
+	return s.history
 }
 
 // info records a normal event.
@@ -300,9 +314,63 @@ func (s *Service) Sync(ctx context.Context) ([]Job, error) {
 			continue
 		}
 		changed = append(changed, job)
+
+		// A download that has come to rest joins the history, and
+		// the moment it was added is recorded the first time the
+		// engine is seen. The two are what hold the order of the list
+		// stable across a restart.
+		s.recordHistory(job)
 	}
 
 	return changed, nil
+}
+
+// recordHistory writes a download that has come to rest into the
+// history.
+//
+// The moment the download was added is recorded once, when the
+// download is first seen. It never changes afterwards: it is what
+// holds the order of the list stable.
+func (s *Service) recordHistory(job Job) {
+	if s.history == nil || job.GID == "" {
+		return
+	}
+
+	// The moment the download was added. It is written the first time
+	// only, so that a download that is seen again does not move.
+	if err := s.history.RecordBirth(job.GID, job.Created); err != nil {
+		s.error("the moment the download was added could not be saved: " + err.Error())
+	}
+
+	if !job.IsFinished() {
+		return
+	}
+
+	status := job.Status
+	switch status {
+	case StatusComplete, StatusError, StatusRemoved:
+	default:
+		return
+	}
+
+	addedAt := job.Created
+	if birth, found, err := s.history.Birth(job.GID); err == nil && found && birth != "" {
+		addedAt = birth
+	}
+
+	if _, err := s.history.AddRecord(HistoryRecord{
+		GID:         job.GID,
+		Name:        job.Title,
+		URI:         job.URI,
+		Dir:         job.Dir,
+		TotalLength: job.TotalLength,
+		Status:      status,
+		TaskType:    job.Kind,
+		AddedAt:     addedAt,
+		CompletedAt: job.Updated,
+	}); err != nil {
+		s.error("the history could not be saved: " + err.Error())
+	}
 }
 
 // collect asks the engine for every download it knows about.

@@ -119,6 +119,64 @@ export function resolveCommand(
     case 'store_keys':
       return { method: APP_SERVICE + '.StoreKeys', args: [stringOf(args, 'name')] };
 
+    // --- the history ---------------------------------------------------------
+    // The downloads that have come to rest. The history outlives the
+    // download records, so it is what the interface shows in its own
+    // panel.
+    case 'history_add_record':
+      return {
+        method: APP_SERVICE + '.HistoryAddRecord',
+        args: [args.record ?? {}],
+      };
+    case 'history_get_records':
+      return {
+        method: APP_SERVICE + '.HistoryGetRecords',
+        args: [stringOf(args, 'status')],
+      };
+    case 'history_get_page':
+      return {
+        method: APP_SERVICE + '.HistoryGetPage',
+        args: [args.input ?? {}],
+      };
+    case 'history_get_record':
+      return {
+        method: APP_SERVICE + '.HistoryGetRecord',
+        args: [stringOf(args, 'gid')],
+      };
+    case 'history_remove_record':
+      return {
+        method: APP_SERVICE + '.HistoryRemoveRecord',
+        args: [stringOf(args, 'gid')],
+      };
+    case 'history_clear_records':
+      return {
+        method: APP_SERVICE + '.HistoryClearRecords',
+        args: [stringOf(args, 'status')],
+      };
+    case 'history_remove_stale':
+      return {
+        method: APP_SERVICE + '.HistoryRemoveStale',
+        args: [stringsOf(args, 'gids')],
+      };
+    case 'history_record_birth':
+      return {
+        method: APP_SERVICE + '.HistoryRecordBirth',
+        args: [stringOf(args, 'gid'), stringOf(args, 'addedAt')],
+      };
+    case 'history_load_births':
+      return { method: APP_SERVICE + '.HistoryLoadBirths', args: [] };
+    case 'history_remove_births':
+      return {
+        method: APP_SERVICE + '.HistoryRemoveBirths',
+        args: [stringsOf(args, 'gids')],
+      };
+
+    // --- the database ----------------------------------------------------------
+    case 'database_schema_version':
+      return { method: APP_SERVICE + '.DatabaseSchemaVersion', args: [] };
+    case 'history_check_integrity':
+      return { method: APP_SERVICE + '.DatabaseIntegrityCheck', args: [] };
+
     // --- the preferences the backend owns -----------------------------------
     case 'refresh_runtime_config':
       // The backend applies the stored preferences to the window.

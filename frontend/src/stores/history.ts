@@ -1,4 +1,13 @@
-/** Download history commands; SQLite and transactions belong to Rust. */
+/**
+ * The history of the downloads that have come to rest.
+ *
+ * The history outlives the download records: a download that is removed
+ * from the list stays in the history, and the history is what the
+ * interface shows in its own panel.
+ *
+ * The backend keeps it in PocketBase, so the commands below are the
+ * ones of the backend, reached through the command map.
+ */
 import { defineStore } from 'pinia'
 import { invoke } from '@tauri-apps/api/core'
 import { useDatabaseStore } from '@/stores/database'
@@ -27,7 +36,7 @@ export const useHistoryStore = defineStore('history', () => {
   }
   return {
     init: database.init,
-    addRecord: (record: HistoryRecord) => call<void>('history_add_record', { record }),
+    addRecord: (record: HistoryRecord) => call<HistoryRecord>('history_add_record', { record }),
     getRecords: (status?: string) => call<HistoryRecord[]>('history_get_records', { status }),
     getRecordsPage: (input: HistoryRecordsPageInput) =>
       call<HistoryRecordsPage>('history_get_page', {
@@ -42,8 +51,8 @@ export const useHistoryStore = defineStore('history', () => {
     recordTaskBirth: (gid: string, addedAt = new Date().toISOString()) =>
       call<void>('history_record_birth', { gid, addedAt }),
     async loadBirthRecords(): Promise<Array<{ gid: string; added_at: string }>> {
-      const records = await call<Array<[string, string]>>('history_load_births')
-      return records.map(([gid, added_at]) => ({ gid, added_at }))
+      const records = await call<Array<{ gid: string; added_at: string }>>('history_load_births')
+      return records.map((record) => ({ gid: record.gid, added_at: record.added_at }))
     },
     getSchemaVersion: () => call<number>('database_schema_version'),
   }

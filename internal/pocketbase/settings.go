@@ -21,6 +21,12 @@ const (
 	SettingAPIKey = "app.api_key"
 	// SettingBaseURL holds the base URL of the remote API.
 	SettingBaseURL = "app.base_url"
+	// SettingAppConfig holds the configuration of the frontend.
+	//
+	// The ported frontend keeps its whole configuration in one record,
+	// so the record is kept as it is. The backend does not interpret
+	// it: it stores it and gives it back.
+	SettingAppConfig = "app.config"
 	// SettingAria2 holds the Aria2-Next settings.
 	SettingAria2 = "app.aria2"
 	// SettingAria2Secret holds the encrypted RPC secret of the
@@ -303,6 +309,32 @@ func defaultDownloadDir() string {
 		return "."
 	}
 	return filepath.Join(home, "Downloads")
+}
+
+// SetAppConfig stores the configuration of the frontend.
+//
+// The configuration is a record of the frontend's own shape, and the
+// backend does not interpret it. It is stored as it is given, so that
+// a field the backend knows nothing about survives a restart.
+func (s *SettingsStore) SetAppConfig(config map[string]any) error {
+	return s.setValue(SettingAppConfig, config, false)
+}
+
+// GetAppConfig returns the configuration of the frontend.
+//
+// The second return value reports whether a configuration was stored.
+// A missing one means the first run, and the frontend writes its
+// defaults.
+func (s *SettingsStore) GetAppConfig() (map[string]any, bool, error) {
+	config := map[string]any{}
+	found, err := s.getValue(SettingAppConfig, false, &config)
+	if err != nil {
+		return nil, false, err
+	}
+	if !found || config == nil {
+		return map[string]any{}, false, nil
+	}
+	return config, true, nil
 }
 
 // SetAria2 stores the Aria2 settings.

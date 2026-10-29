@@ -146,20 +146,81 @@ func main() {
 	}
 	fmt.Println("   the file was written to the download folder")
 
+	// The download that has come to rest is in the history, and the
+	// moment it was added is recorded. The two are what hold the
+	// order of the list stable across a restart.
+	history := service.History()
+	records, err := history.Records(downloads.HistoryStatusComplete)
+	if err != nil {
+		fmt.Println("   FAIL: the history could not be read:", err)
+		os.Exit(1)
+	}
+	if len(records) != 1 {
+		fmt.Printf("   FAIL: the history holds %d entries, want 1\n", len(records))
+		os.Exit(1)
+	}
+	if records[0].GID != job.GID {
+		fmt.Printf("   FAIL: the history holds %q, want %q\n", records[0].GID, job.GID)
+		os.Exit(1)
+	}
+	if records[0].AddedAt == "" {
+		fmt.Println("   FAIL: the history has no moment of its own")
+		os.Exit(1)
+	}
+	fmt.Printf("5. The history holds the download: %s (added at %s)\n",
+		records[0].Name, records[0].AddedAt)
+
+	// The configuration of the frontend survives a write and a read.
+	// It used to keep only the size of the interface and the theme,
+	// so every other setting of the user was lost.
+	cipher, err := bitmaherpb.NewCipher(svc.DataDir())
+	if err != nil {
+		fmt.Println("   FAIL: the cipher could not be created:", err)
+		os.Exit(1)
+	}
+	settings := bitmaherpb.NewSettingsStore(svc.App(), cipher)
+	configuration := map[string]any{
+		"uiScale":          1.25,
+		"theme":            "dark",
+		"dir":              dir,
+		"maxDownloadLimit": int64(1048576),
+		"btMaxPeers":       50,
+	}
+	if err := settings.SetAppConfig(configuration); err != nil {
+		fmt.Println("   FAIL: the configuration could not be stored:", err)
+		os.Exit(1)
+	}
+	stored, wasStored, readErr := settings.GetAppConfig()
+	if readErr != nil {
+		fmt.Println("   FAIL: the configuration could not be read:", readErr)
+		os.Exit(1)
+	}
+	if !wasStored {
+		fmt.Println("   FAIL: the configuration was not found")
+		os.Exit(1)
+	}
+	for _, key := range []string{"dir", "maxDownloadLimit", "btMaxPeers"} {
+		if _, ok := stored[key]; !ok {
+			fmt.Printf("   FAIL: the setting %q was lost\n", key)
+			os.Exit(1)
+		}
+	}
+	fmt.Println("6. The configuration of the frontend survived the round trip")
+
 	// The engine's own statistics have to answer.
 	stat, err := service.Stat(ctx)
 	if err != nil {
 		fmt.Println("   FAIL: the statistics could not be read:", err)
 		os.Exit(1)
 	}
-	fmt.Printf("5. The engine answered: %d stopped, %d active\n", stat.NumStopped, stat.NumActive)
+	fmt.Printf("7. The engine answered: %d stopped, %d active\n", stat.NumStopped, stat.NumActive)
 
 	// The sidecar is stopped, and it must not outlive the check.
 	if err := manager.Stop(ctx); err != nil {
 		fmt.Println("   FAIL: the sidecar did not stop:", err)
 		os.Exit(1)
 	}
-	fmt.Println("6. The sidecar stopped")
+	fmt.Println("8. The sidecar stopped")
 
 	fmt.Println("\nEND TO END: PASS")
 }

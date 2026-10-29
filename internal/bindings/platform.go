@@ -189,19 +189,39 @@ const storePreferencesKey = "preferences"
 //
 // The preferences of the ported frontend live in a JSON file. BitMaher
 // keeps them in PocketBase, so the store is a view onto the settings
-// record: the interface preferences are the ones the backend owns, and
-// the rest of the configuration is returned as it was given.
+// record.
+//
+// The whole configuration of the frontend comes back, as it was
+// stored. The size of the interface is the one preference the backend
+// owns, so it is refreshed from the `ui` record: the backend is the
+// one that applies it to the window, and the two have to agree.
+//
+// A configuration that was never stored comes back empty, so that the
+// frontend writes its own defaults rather than the ones of the
+// backend.
 func (s *AppService) StoreRead(name string) (map[string]any, error) {
+	config, found, err := s.settings.GetAppConfig()
+	if err != nil {
+		return nil, err
+	}
+
+	if !found {
+		return map[string]any{
+			storePreferencesKey: map[string]any{},
+		}, nil
+	}
+
 	ui, err := s.settings.GetUI()
 	if err != nil {
 		return nil, err
 	}
 
+	// The size of the interface is stored as a percentage and handed
+	// to the frontend as the factor it works with.
+	config["uiScale"] = float64(ui.Zoom) / 100
+
 	return map[string]any{
-		storePreferencesKey: map[string]any{
-			"uiScale": float64(ui.Zoom) / 100,
-			"theme":   ui.Theme,
-		},
+		storePreferencesKey: config,
 	}, nil
 }
 
@@ -216,9 +236,10 @@ func (s *AppService) StoreReadValue(name, key string) (any, error) {
 
 // StoreWrite writes one value of a store.
 //
-// The interface preferences are the ones the backend owns: the size of
-// the interface and the colour scheme. The rest of the configuration is
-// accepted and dropped, because the backend has no place for it yet.
+// The whole configuration of the frontend comes as one record, and it
+// is stored as it is. The interface preferences are also written to
+// the `ui` record, because the backend owns them: it is the one that
+// applies the size of the interface to the window.
 func (s *AppService) StoreWrite(name, key string, value any) error {
 	if key != storePreferencesKey {
 		return nil
@@ -227,6 +248,12 @@ func (s *AppService) StoreWrite(name, key string, value any) error {
 	values, ok := value.(map[string]any)
 	if !ok {
 		return fmt.Errorf("the value of the preferences key is not a record")
+	}
+
+	// The configuration is stored whole, so that a field the backend
+	// knows nothing about survives a restart.
+	if err := s.settings.SetAppConfig(values); err != nil {
+		return err
 	}
 
 	settings, err := s.settings.GetUI()
@@ -248,6 +275,24 @@ func (s *AppService) StoreWrite(name, key string, value any) error {
 	// shrink while the slider is still moving.
 	s.applyZoom(updated.Zoom)
 
+	return nil
+}
+
+// SetWindowDecorations turns the native frame of the window on or off.
+//
+// The interface draws its own caption buttons, so a framed window would
+// show two sets of them. The window manager of some Linux desktops
+// forces its own decorations, and the user can ask for them back.
+//
+// It is a no-op when the application runs without a window.
+func (s *AppService) SetWindowDecorations(visible bool) error {
+	if s == nil || s.window == nil {
+		return nil
+	}
+
+	// The frame is off when the window is frameless, so the two are
+	// the same thing.
+	s.window.SetFrameless(!visible)
 	return nil
 }
 
@@ -283,13 +328,22 @@ func (s *AppService) applyZoom(percent int) {
 }
 
 // StoreDelete removes one value of a store.
+//
+// Removing the preferences resets the configuration to the defaults of
+// the frontend, which it writes back when it starts.
 func (s *AppService) StoreDelete(name, key string) error {
-	return nil
+	if key != storePreferencesKey {
+		return nil
+	}
+	return s.settings.SetAppConfig(map[string]any{})
 }
 
 // StoreClear removes every value of a store.
+//
+// It is the same as removing the preferences: the store holds nothing
+// else.
 func (s *AppService) StoreClear(name string) error {
-	return nil
+	return s.settings.SetAppConfig(map[string]any{})
 }
 
 // StoreKeys returns the keys of a store.
@@ -304,7 +358,12 @@ func (s *AppService) StoreKeys(name string) ([]string, error) {
 //
 // The size of the interface is a factor in the frontend and a
 // percentage in the backend, because the setting is the one a person
-// reads: "110%" means something, "1.1" does not.
+// reads: "110% means something", "1.1" does not.
+//
+// The theme of the frontend is "auto", "light" or "dark". Only the two
+// concrete ones are recorded, because "auto" is a decision the
+// frontend makes at every start, and the backend does not apply the
+// theme to anything.
 func mergeUI(current pocketbase.UI, values map[string]any) (pocketbase.UI, error) {
 	updated := current
 
@@ -318,7 +377,7 @@ func mergeUI(current pocketbase.UI, values map[string]any) (pocketbase.UI, error
 		}
 		updated.Zoom = zoom
 	}
-	if theme, ok := values["theme"].(string); ok {
+	if theme, ok := values["theme"].(string); ok && (theme == "light" || theme == "dark") {
 		updated.Theme = theme
 	}
 

@@ -316,6 +316,7 @@ Everything lives in `pb_data/` next to the executable: `data.db`, `storage/`, `.
 ## Documentation
 
 - `README.md` is the user-facing guide: what is in the box, how it is put together, and how to build it.
+- `docs/handbook/` is the companion book: the nooks and crannies of Wails, Go, Aria2-Next, PocketBase and Vue, and the failure modes that have already happened here.
 - `docs/architecture.md` explains why the pieces are shaped the way they are.
 - `docs/troubleshooting.md` collects the failures that cost time, and what actually fixes them.
 - `CONTEXT.md` is the vocabulary: what each term in this codebase means.

@@ -1,7 +1,7 @@
 package main
 
-// A check that the header icon is served by the application's own asset
-// server.
+// A check that the application icon is served by the application's own
+// asset server.
 //
 // The icon lives in frontend/public, so the build copies it into
 // frontend/dist and the binary embeds it. The webview asks for it at
@@ -53,5 +53,5 @@ func main() {
 
 	fmt.Printf("   %d bytes on disk, %d served, %s\n",
 		info.Size(), len(body), rec.Header().Get("Content-Type"))
-	fmt.Println("\nHEADER ICON: PASS")
+	fmt.Println("\nAPP ICON: PASS")
 }

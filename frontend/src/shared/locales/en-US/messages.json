@@ -16,7 +16,6 @@
   },
   "app": {
     "task-list": "Tasks",
-    "total-speed": "The speed of all the downloads together",
     "check-updates-now": "Check Now",
     "checking-for-updates": "Checking for updates...",
     "hide": "Hide BitMaher",

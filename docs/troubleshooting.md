@@ -132,25 +132,18 @@ includes them. Run `npm run typecheck` to check both.
 
 ### The copy button does nothing
 
-`navigator.clipboard` needs a secure context and a user gesture, which a webview does not always provide. `writeClipboard` in
-`frontend/src/features/console/ConsolePanel.tsx` already falls back to `document.execCommand('copy')`.
+`navigator.clipboard` needs a secure context and a user gesture, which a webview does not always provide. The Tauri-compatible
+clipboard API in `frontend/src/platform/clipboard.ts` already falls back to `document.execCommand('copy')`.
 
-If you write a new copy path, use `writeClipboard` rather than calling `navigator.clipboard` directly.
+If you write a new copy path, use the platform layer rather than calling `navigator.clipboard` directly.
 
 If the fallback is used, the hidden textarea must **not** be `display: none` — that makes it unselectable and the copy fails
 silently. Position it off-screen with `opacity: 0` instead.
 
-### The debug console does not appear
+### Clicking a selectable row collapses it while the user is selecting text
 
-The console is hidden by default. It is shown with **Ctrl+Shift+I** or with the **Console** button in the header.
-
-If the shortcut does nothing, another element has the focus and swallowed the key event: the shortcut is matched on
-`window`, so it only works when the event reaches the page. The Command key is accepted as well, for macOS.
-
-### Clicking a log row collapses the panel while the user is selecting text
-
-A click that ends a text drag fires the row's click handler. The console rows check `hasTextSelection()` before toggling the
-detail view. Apply the same guard to any new selectable row.
+A click that ends a text drag fires the row's click handler. A selectable row checks `hasTextSelection()` before it acts.
+Apply the same guard to any new selectable row.
 
 ### The native select dropdown is blank
 
@@ -158,7 +151,7 @@ The interface is dark, but the native popup is drawn by the engine and does not 
 `color-scheme: dark` on `:root`, WebKitGTK renders the popup with a light background while the option text stays light, so the
 selected item appears to be missing.
 
-`color-scheme: dark` and the `select option` rule in `frontend/src/styles.css` both exist for this.
+`color-scheme: dark` and the `select option` rule in `frontend/src/styles/` both exist for this.
 
 ### The interface does not scale with the zoom
 

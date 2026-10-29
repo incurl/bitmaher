@@ -212,30 +212,25 @@ The application runs in a webview, where the user cannot change the browser's ba
 root.style.fontSize = `${(13 * factor) / 100}px`;
 ```
 
-Every size in `frontend/src/styles.css` is therefore expressed in `rem`, so the entire layout follows. A size in `px` does not
+Every size in `frontend/src/styles/` is therefore expressed in `rem`, so the entire layout follows. A size in `px` does not
 scale, and is a bug waiting to happen. The factor is also written as a custom property (`--zoom`) and a data attribute
 (`data-zoom`) for the few things that cannot be expressed in `rem`.
 
 The zoom is persisted in `app_settings` under the `ui` key, and restored as soon as the settings load. It is set from the
 **Zoom** tab of the settings dialog, which is tabbed so that the credentials and the interface scale do not share one form.
 
-## The console panel is a plain text view
+## The clipboard needs a fallback
 
-The debug console deliberately shows plain text, not a rich editor. The point is to read a raw API response verbatim.
+The webview does not always have a secure context, and `navigator.clipboard` needs one. So the Tauri-compatible clipboard API
+lives in the platform layer (`frontend/src/platform/clipboard.ts`): it asks the Wails runtime first, and a hidden text area
+plus `document.execCommand('copy')` takes over when the runtime refuses.
 
-It is hidden until it is asked for, with **Ctrl+Shift+I** or with the button in the header. The shortcut is matched in the page
-(`frontend/src/ui/shortcuts.ts`), because the webview has no menu bar of its own, and `event.preventDefault()` keeps the
-webview from opening its own inspector on the same keys. The header button carries the error count, so a failure is visible
-while the console is closed.
+Two details are load-bearing, and they both come from the webview rather than from the design:
 
-Three details are load-bearing, and they all come from the webview rather than from the design:
-
-- **The clipboard needs a fallback.** `navigator.clipboard` requires a secure context and a user gesture, which a webview does
-  not always provide. `writeClipboard` falls back to a hidden textarea plus `document.execCommand('copy')`.
-- **The fallback must not use `display: none`.** That makes the textarea unselectable and breaks the copy command. It is
+- **The fallback must not use `display: none`.** That makes the text area unselectable and breaks the copy command. It is
   positioned off-screen with `opacity: 0` instead.
-- **A drag that ends in a click fires the row handler.** `hasTextSelection()` is checked before toggling the detail view, so
-  selecting a message to read it does not collapse the panel.
+- **A drag that ends in a click fires the row handler.** A selectable row checks `hasTextSelection()` before it acts, so
+  selecting a message to read it does not collapse the row.
 
 ## Why there is no UI kit
 
@@ -265,4 +260,4 @@ layout is a grid; the panels are plain `div`s. Extending it means adding a panel
 | Where is the schema? | `internal/pocketbase/migrations/` |
 | How are files served? | `internal/pocketbase/service.go` (`Handler`), `main.go` (`combineHandlers`) |
 | How are secrets stored? | `internal/pocketbase/crypto.go`, `internal/pocketbase/settings.go` |
-| How does the UI get live updates? | `internal/bindings/events.go`, `frontend/src/app/App.tsx` |
+| How does the UI get live updates? | `internal/bindings/events.go`, `frontend/src/layouts/MainLayout.vue` |

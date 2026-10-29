@@ -156,7 +156,7 @@ through their namespace: `common:generate:bindings`, `common:fetch:aria2`, `comm
 | The download domain | `internal/downloads/` | `go test ./internal/downloads/` and `go run ./tools/e2e-check` |
 | A collection or a field | `internal/pocketbase/migrations/` (a new file with a later timestamp) | `go test ./internal/pocketbase/...` |
 | Settings or secrets | `internal/pocketbase/settings.go`, `internal/pocketbase/crypto.go` | `go test ./internal/pocketbase/...` |
-| A panel or the layout | `frontend/src/features/`, `frontend/src/app/App.tsx`, `frontend/src/styles.css` | `npm run typecheck && npm test` |
+| A panel or the layout | `frontend/src/components/`, `frontend/src/layouts/MainLayout.vue`, `frontend/src/styles/` | `npm run typecheck && npm test` |
 | The bundled engine version | `build/Taskfile.yml` (`ARIA2_VERSION`), `internal/aria2/binary.go` (`aria2Version`) | `wails3 task common:fetch:aria2` and `go run ./tools/bundled-check` |
 | A dependency | `frontend/package.json` or `go.mod` | `python3 tools/license-audit.py` |
 
@@ -205,18 +205,9 @@ Wails runtime, and the Vite aliases point `@tauri-apps/*` at it. Three rules fol
 A component that needs a new backend operation gets a method on `AppService`, the bindings are regenerated, and the command
 map gains an entry.
 
-## The Header and the Size of the Interface
+## The Size of the Interface
 
-Two things belong to BitMaher rather than to the port, and they are the
-first things to keep when the interface changes.
-
-**The header** (`frontend/src/components/layout/AppHeader.vue`) is the
-band across the top: the application's icon, its name, the speed of all
-the downloads together, and the two controls that are not about the
-downloads. It is a grid row of its own, so the layout below it shifts by
-one row when it appears.
-
-**The size of the interface** is the zoom of the webview. The frontend
+The size of the interface is the zoom of the webview. The frontend
 holds it as a factor (`uiScale`), the backend stores it as a percentage
 (`ui.Zoom`), and the store is where the two meet:
 
@@ -245,8 +236,9 @@ interface, text included.
 ## The Webview Gotchas
 
 - **`navigator.clipboard` needs a secure context and a user gesture**, which a webview does not always provide. The copy
-  buttons fall back to a hidden textarea plus `document.execCommand('copy')`.
-- **A click that ends a text drag fires the row's click handler.** The console rows check `hasTextSelection()` first.
+  path lives in the platform layer (`frontend/src/platform/clipboard.ts`), and it falls back to a hidden textarea plus
+  `document.execCommand('copy')`.
+- **A click that ends a text drag fires the row's click handler.** A selectable row checks `hasTextSelection()` first.
 - **`user-select: none` on a copy button** keeps the button's label out of the text the reader selects.
 - The clipboard fallback must not use `display: none`; it is positioned off-screen with `opacity: 0`.
 

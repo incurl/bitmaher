@@ -29,7 +29,6 @@ import { useEscapeKey } from '@/composables/useEscapeKey'
 import { painted } from '@/composables/useWindowReveal'
 import { throttledResizeHandler, cancelPendingResize } from '@/layouts/resizeThrottle'
 import AppSidebar from '@/components/layout/AppSidebar.vue'
-import AppHeader from '@/components/layout/AppHeader.vue'
 import PreferenceActionBar from '@/components/preference/PreferenceActionBar.vue'
 import { providePreferenceActions } from '@/composables/usePreferenceActions'
 import TaskActions from '@/components/task/TaskActions.vue'
@@ -758,7 +757,6 @@ onUnmounted(() => {
         <div class="engine-progress" />
       </div>
     </Transition>
-    <AppHeader @show-about="openAbout" />
     <div class="window-chrome" data-tauri-drag-region />
     <div class="sidebar-heading" data-tauri-drag-region>
       <h2 data-tauri-drag-region>{{ t('app.task-list') }}</h2>
@@ -907,9 +905,9 @@ onUnmounted(() => {
 #container {
   display: grid;
   grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
-  /* The rows are: the header, the draggable chrome, the title, the
-   * content and the footer. */
-  grid-template-rows: auto 32px 56px minmax(0, 1fr) auto;
+  /* The rows are: the draggable chrome, the title, the content and
+   * the footer. */
+  grid-template-rows: 32px 56px minmax(0, 1fr) auto;
   transition: grid-template-columns var(--navigation-duration) var(--navigation-easing);
   height: 100vh;
   position: relative;
@@ -918,7 +916,7 @@ onUnmounted(() => {
 }
 .window-chrome {
   grid-column: 1 / -1;
-  grid-row: 2;
+  grid-row: 1;
   background: linear-gradient(
     to right,
     var(--sidebar-bg) 0 var(--sidebar-width),
@@ -927,7 +925,7 @@ onUnmounted(() => {
 }
 .sidebar-heading {
   grid-column: 1;
-  grid-row: 3;
+  grid-row: 2;
   padding-inline: 20px;
   overflow: hidden;
   background: var(--sidebar-bg);
@@ -954,12 +952,12 @@ onUnmounted(() => {
 }
 .sidebar-slot {
   grid-column: 1;
-  grid-row: 4 / 6;
+  grid-row: 3 / 5;
   min-height: 0;
 }
 .page-header {
   grid-column: 2;
-  grid-row: 3;
+  grid-row: 2;
   margin-inline: var(--content-gutter);
   padding-bottom: 12px;
   align-items: flex-end;
@@ -980,7 +978,7 @@ onUnmounted(() => {
 }
 .content {
   grid-column: 2;
-  grid-row: 4;
+  grid-row: 3;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
@@ -989,7 +987,7 @@ onUnmounted(() => {
   container: footer / inline-size;
   min-height: 64px;
   grid-column: 2;
-  grid-row: 5;
+  grid-row: 4;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;

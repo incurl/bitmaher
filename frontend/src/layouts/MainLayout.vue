@@ -108,7 +108,16 @@ const systemTitleBar = computed(() => isLinux.value && preferenceStore.config.sy
 watch(
   systemTitleBar,
   (enabled, previous) => {
-    if (!isLinux.value || (previous === undefined && !enabled)) return
+    if (!isLinux.value) return
+    // The state is applied at the first run as well: the window is
+    // frameless by default on Linux, and the preference is what says
+    // whether the user wants the frame of the window manager.
+    if (previous === undefined && !enabled) {
+      getCurrentWindow()
+        .setDecorations(false)
+        .catch((error: unknown) => logger.debug('MainLayout.setDecorations', error))
+      return
+    }
     getCurrentWindow()
       .setDecorations(enabled)
       .catch((error: unknown) => logger.debug('MainLayout.setDecorations', error))

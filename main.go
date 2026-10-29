@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -186,10 +187,18 @@ func run() error {
 		zoom = float64(ui.Zoom) / 100
 	}
 
-	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Title:  bindings.AppName,
-		Width:  1440,
-		Height: 900,
+	// The window is frameless on Windows and Linux, because the
+	// interface draws its own caption buttons there. A framed window
+	// would show the native ones as well, and the user would see two
+	// sets of minimize, maximize and close.
+	//
+	// macOS is the other way round: the traffic lights are the native
+	// ones, and the interface draws nothing in that corner.
+	options := application.WebviewWindowOptions{
+		Title:     bindings.AppName,
+		Width:     1440,
+		Height:    900,
+		Frameless: runtime.GOOS != "darwin",
 		Mac: application.MacWindow{
 			InvisibleTitleBarHeight: 50,
 			Backdrop:                application.MacBackdropTranslucent,
@@ -198,7 +207,9 @@ func run() error {
 		BackgroundColour: application.NewRGB(6, 7, 15),
 		URL:              "/",
 		Zoom:             zoom,
-	})
+	}
+
+	window := app.Window.NewWithOptions(options)
 
 	// The service applies the size of the interface when the user
 	// changes it, so that the setting is kept in one place.

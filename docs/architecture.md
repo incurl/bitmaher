@@ -136,12 +136,56 @@ package discoverable.
 - the name must be **stable** once applied, because PocketBase records it and will not re-run it under a different name;
 - to make a migration idempotent, check whether the field already exists before adding it.
 
-The shipped migrations are `1730000000_init.go`. A new one would be `1732000000_add_notes.go`.
+The shipped migrations are `1730000000_init.go`, `1732000000_bitmaher_downloads.go` and `1733000000_bitmaher_history.go`. A
+new one would be `1734000000_add_notes.go`.
+
+## The configuration of the frontend is one record
+
+The ported frontend keeps its whole configuration in one value of a key-value store: 143 fields, from the colour scheme
+to the speed limits. The backend stores that record as it is, under the `app.config` key of `app_settings`.
+
+**The backend does not interpret it.** It does not know what `btMaxPeers` means, and it does not have to: the record is
+stored whole and handed back whole, so a field the backend knows nothing about still survives a restart.
+
+The size of the interface is the one exception, because the backend owns it: it is what the zoom of the window is. It is
+therefore stored twice — in the `ui` record, as the percentage a person reads, and in the configuration, as the factor the
+frontend works with. The two are written together and read back together, so they cannot drift apart.
+
+The store used to keep only `uiScale` and `theme`, and drop the other 141 fields. Every setting the user had changed was
+gone on the next start.
+
+## The history outlives the download records
+
+A download that is removed from the list is still a download the user did. The history is what the interface shows in its
+own panel, and it is kept in two collections:
+
+- `download_history` holds the downloads that have come to rest: their name, their size, their status, and the moment
+  they finished.
+- `task_birth` holds the moment every download was **added**, written once and never changed.
+
+The moment of the birth is what holds the order of the list stable across a restart. Without it the order would follow the
+order the engine happens to report the downloads in, and the list would shuffle every time the application started.
+
+Both are written by `downloads.Sync`, which is the one reader of the engine's state, so there is a single place where a
+download becomes part of the history.
+
+## The frame of the window
+
+The window is frameless on Windows and Linux, because the interface draws its own caption buttons there. A framed window
+would show the native ones as well, and the user would see two sets of minimize, maximize and close.
+
+macOS is the other way round: the traffic lights are the native ones, and the interface draws nothing in that corner.
+`Frameless` is therefore false on macOS, because Wails hides the traffic lights when it is true. The macOS title bar is
+the hidden-inset one, so the lights sit over the draggable chrome of the layout.
+
+The **system title bar** preference turns the native frame back on, for the Linux window managers that force their own
+decorations. It calls `SetWindowDecorations`, which is `SetFrameless` on the Wails window.
 
 ## The access rules are the write gate
 
 The scaffold sets `ListRule` and `ViewRule` to `""` (public read) on `jobs` and `artifacts`, and leaves `app_settings` without
-any rule.
+any rule. The BitMaher collections — `download_jobs`, `job_logs`, `bt_presets`, `download_history` and `task_birth` — follow
+the same shape: public read, closed write.
 
 Read access is public because the application is a single-user desktop app: the local database is the user's own data. Write
 access is **closed**, because every write goes through the Go services, where the invariants live. That is the shape the

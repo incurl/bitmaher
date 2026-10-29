@@ -7,6 +7,7 @@
  */
 import { Events } from '@wailsio/runtime';
 import { listen as listenEvent, type Event, type UnlistenFn } from './event';
+import { invoke } from './core';
 
 /** A window handle. */
 export interface WindowHandle {
@@ -115,7 +116,10 @@ const mainWindow: WindowHandle = {
   },
 
   async setDecorations(visible: boolean) {
-    await Events.Emit('window:set-decorations' as never, visible as never);
+    // The frame is the backend's business: the window is created
+    // there, and the backend is the one that turns the frame on and
+    // off.
+    await invoke('set_window_decorations', { visible });
   },
 
   async scaleFactor() {

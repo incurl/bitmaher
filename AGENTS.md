@@ -72,9 +72,11 @@ owns the domain: the records, the status mapping, the service the bindings call.
 - **Never hand-edit `frontend/dist/`.** It is the `//go:embed` payload, built by Vite and gitignored.
 - New collections and fields go in `internal/pocketbase/migrations/` as a Go migration registered in an `init()`. The file
   name is the migration's identity *and* its ordering key: the list is sorted by name, so a new migration must be named with a
-  timestamp that sorts after the ones already applied (`1730000000_init.go` → `1732000000_bitmaher_downloads.go`).
-- PocketBase's collection access rules are the write gate. `download_jobs`, `job_logs` and `bt_presets` are read public and
-  write closed. `app_settings` has **no** rule at all, so only the Go backend can read it. Do not open `app_settings`.
+  timestamp that sorts after the ones already applied (`1730000000_init.go` → `1732000000_bitmaher_downloads.go` →
+  `1733000000_bitmaher_history.go`).
+- PocketBase's collection access rules are the write gate. `download_jobs`, `job_logs`, `bt_presets`, `download_history` and
+  `task_birth` are read public and write closed. `app_settings` has **no** rule at all, so only the Go backend can read it. Do
+  not open `app_settings`.
 - Secrets are write-only from the UI's point of view. The RPC secret and the API key are encrypted with AES-256-GCM before they
   are written, and the key lives in a `0600` file in the data directory. Never return a secret from a bound method.
 - Ask before adding heavy dependencies, changing auth/token behaviour, or altering the Docker/release workflows.
@@ -154,8 +156,10 @@ through their namespace: `common:generate:bindings`, `common:fetch:aria2`, `comm
 | The engine's RPC surface | `internal/aria2/rpcclient.go` and `status.go`, then a test with a stub endpoint | `go test ./internal/aria2/` and `go run ./tools/e2e-check` |
 | The sidecar lifecycle | `internal/aria2/manager.go` | `go run ./tools/watchdog-check` and `go run ./tools/bundled-check` |
 | The download domain | `internal/downloads/` | `go test ./internal/downloads/` and `go run ./tools/e2e-check` |
+| The history of the downloads | `internal/downloads/history.go`, then a mapping in `frontend/src/platform/commands.ts` | `go test ./internal/downloads/` and `go run ./tools/e2e-check` |
 | A collection or a field | `internal/pocketbase/migrations/` (a new file with a later timestamp) | `go test ./internal/pocketbase/...` |
 | Settings or secrets | `internal/pocketbase/settings.go`, `internal/pocketbase/crypto.go` | `go test ./internal/pocketbase/...` |
+| The configuration of the frontend | `internal/bindings/platform.go` (`StoreRead` and `StoreWrite`) | `go test ./internal/bindings/` and `go run ./tools/e2e-check` |
 | A panel or the layout | `frontend/src/components/`, `frontend/src/layouts/MainLayout.vue`, `frontend/src/styles/` | `npm run typecheck && npm test` |
 | The bundled engine version | `build/Taskfile.yml` (`ARIA2_VERSION`), `internal/aria2/binary.go` (`aria2Version`) | `wails3 task common:fetch:aria2` and `go run ./tools/bundled-check` |
 | A dependency | `frontend/package.json` or `go.mod` | `python3 tools/license-audit.py` |
@@ -241,6 +245,40 @@ interface, text included.
 - **A click that ends a text drag fires the row's click handler.** A selectable row checks `hasTextSelection()` first.
 - **`user-select: none` on a copy button** keeps the button's label out of the text the reader selects.
 - The clipboard fallback must not use `display: none`; it is positioned off-screen with `opacity: 0`.
+
+## What Is Persisted, and Where
+
+Everything the user would miss if it were lost survives a restart, and each of them has its own place:
+
+| What | Where | Written by |
+| --- | --- | --- |
+| The configuration of the frontend | `app_settings`, under the `app.config` key | `StoreWrite` |
+| The size of the interface and the theme | `app_settings`, under the `ui` key | `StoreWrite` |
+| The downloads that are running | `download_jobs` | `downloads.Sync` |
+| The downloads that have come to rest | `download_history` | `downloads.Sync` |
+| The moment every download was added | `task_birth` | `downloads.Sync` |
+
+**The configuration of the frontend is one record.** The ported frontend keeps all of it in one value of the key-value
+store, so the backend stores it as one JSON blob under `app.config`. The backend does not interpret it: a field it knows
+nothing about still survives a restart. The `ui` record is separate, because the backend owns the size of the interface
+and applies it to the window.
+
+**The moment a download was added never changes.** It is written the first time the engine is seen, and it is what holds
+the order of the list stable across a restart. Without it the order would follow the order the engine happens to
+report the downloads in.
+
+## The Frame of the Window
+
+The window is **frameless on Windows and Linux**, because the interface draws its own caption buttons there
+(`frontend/src/components/layout/WindowControls.vue`). A framed window would show the native buttons as well, and the
+user would see two sets of them.
+
+**macOS is the other way round**: the traffic lights are the native ones, and the interface draws nothing in that
+corner. `Frameless` is therefore false on macOS — Wails hides the traffic lights when it is true.
+
+The **system title bar** preference (`systemTitleBar`, Linux only) turns the native frame back on for the window
+managers that force their own decorations. It calls `SetWindowDecorations`, which is `SetFrameless` on the Wails
+window.
 
 ## The Data
 

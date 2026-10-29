@@ -1,7 +1,8 @@
 # BitMaher vocabulary
 
 The terms below are shared between the Go backend, the Vue frontend and the documentation. The same terms appear in code as
-collection names (`download_jobs`, `job_logs`, `bt_presets`, `app_settings`) and as JSON field names.
+collection names (`download_jobs`, `job_logs`, `bt_presets`, `download_history`, `task_birth`, `app_settings`) and as JSON field
+names.
 
 Use the **Avoid** synonyms as a signal that the term is not what you want.
 
@@ -74,6 +75,16 @@ _Avoid_: Files, Filter, Subset
 A saved set of engine options, in the `bt_presets` collection. It is the "download the same way again".
 _Avoid_: Profile, Template, Default
 
+**History**:
+The downloads that have come to rest, in the `download_history` collection. It outlives the download records: a download that is
+removed from the list stays in the history.
+_Avoid_: Archive, Log, Journal
+
+**Birth**:
+The moment a download was added, in the `task_birth` collection. It is written once and never changed, and it is what holds the
+order of the list stable across a restart.
+_Avoid_: Creation time, Timestamp, Added at
+
 ## The licensing boundary
 
 **Separate process**:
@@ -92,6 +103,11 @@ _Avoid_: Interface, Layer, Abstraction
 The stored preferences, in the `app_settings` collection. The collection has **no** access rule, so the HTTP API cannot reach it
 and the Go backend is the only reader.
 _Avoid_: Config, Preferences, Options
+
+**Configuration**:
+The whole configuration of the frontend, as one record under the `app.config` key. It is stored as it is given: the backend does
+not interpret it, so a field it knows nothing about still survives a restart.
+_Avoid_: Settings, Preferences
 
 **Secret**:
 A value the backend reads and the frontend never sees: the engine's RPC secret and the API key. It is encrypted with AES-256-GCM

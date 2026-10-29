@@ -177,6 +177,13 @@ export function resolveCommand(
     case 'history_check_integrity':
       return { method: APP_SERVICE + '.DatabaseIntegrityCheck', args: [] };
 
+    // --- the window ----------------------------------------------------------
+    case 'set_window_decorations':
+      return {
+        method: APP_SERVICE + '.SetWindowDecorations',
+        args: [args.visible === true],
+      };
+
     // --- the preferences the backend owns -----------------------------------
     case 'refresh_runtime_config':
       // The backend applies the stored preferences to the window.

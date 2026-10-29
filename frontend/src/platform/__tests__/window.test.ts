@@ -107,6 +107,16 @@ describe('the window of the application', () => {
     expect(bridge.emit).not.toHaveBeenCalled()
   })
 
+  it('asks the backend whether the window is visible', async () => {
+    // The runtime does not carry the question to the frontend, so the
+    // backend answers it. The answer has to be the truth: the frontend
+    // hides the window when it is asked to, and a window that was
+    // already hidden does not need hiding again.
+    bridge.invoke.mockResolvedValue(true)
+    expect(await getCurrentWindow().isVisible()).toBe(true)
+    expect(bridge.invoke).toHaveBeenCalledWith('window_is_visible')
+  })
+
   it('answers whether the window is maximised', async () => {
     bridge.isMaximised.mockResolvedValue(true)
     expect(await getCurrentWindow().isMaximized()).toBe(true)

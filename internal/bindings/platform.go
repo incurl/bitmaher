@@ -172,12 +172,48 @@ func (s *AppService) WriteLog(level, message string) {
 // The ported frontend asks for the features of Rayburst that BitMaher
 // does not have. The call is answered rather than ignored, so that the
 // gap is visible in the debug console.
-func (s *AppService) UnsupportedCommand(command string) {
-	if s.console == nil {
-		return
+//
+// The answer is `false`. A method that returns nothing is answered with
+// an empty object, and an empty object is **true** in JavaScript: the
+// frontend would read the answer of a question about a feature BitMaher
+// does not have as a yes, and act on it.
+func (s *AppService) UnsupportedCommand(command string) bool {
+	if s.console != nil {
+		s.console.Warn("frontend", "the command is not supported by this backend: "+command)
 	}
-	s.console.Warn("frontend", "the command is not supported by this backend: "+command)
+	return false
 }
+
+// NeutralBool answers a command of a feature BitMaher does not have.
+//
+// It is the answer of the commands that expect a boolean: the window
+// does not hide itself at start-up because a question about the
+// autostart was answered with a yes.
+func (s *AppService) NeutralBool() bool {
+	return false
+}
+
+// NeutralValue answers a command of a feature BitMaher does not have.
+//
+// It is the answer of the commands that expect a value.
+//
+// The answer is a **typed nil**, and not the nil of an interface. The
+// runtime answers a result that is nil with an empty object, and an
+// empty object is true in JavaScript: the frontend would read the
+// answer of a question about a feature BitMaher does not have as a
+// value it has to work with. A typed nil is marshalled to null, which
+// is the nothing the frontend expects.
+func (s *AppService) NeutralValue() *Neutral {
+	return nil
+}
+
+// Neutral is the shape of the answers of the features BitMaher does
+// not have.
+//
+// It carries nothing. It exists so that the answer can be a typed nil:
+// a nil of an interface is turned into an empty object by the runtime,
+// and an empty object is true in JavaScript.
+type Neutral struct{}
 
 // The key the preferences are stored under.
 //

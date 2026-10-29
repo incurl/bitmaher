@@ -14,11 +14,14 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -31,7 +34,16 @@ import (
 const (
 	runtimeObjectApplication = 2
 	runtimeMethodQuit        = 2
+
+	// The call of a bound method: the object of the calls, and the
+	// method that binds them.
+	runtimeObjectCall = 0
+	runtimeMethodCall = 0
 )
+
+// appServiceName is the name the runtime addresses the bound methods
+// with.
+const appServiceName = "github.com/incurl/bitmaher/internal/bindings.AppService"
 
 func main() {
 	dir, err := os.MkdirTemp("", "bitmaher-quit")
@@ -90,6 +102,20 @@ func main() {
 	}
 	fmt.Printf("4. The engine is running, pid %d\n", enginePID)
 
+	// The answers of the features BitMaher does not have are falsy.
+	//
+	// The runtime answers a method that returns nothing with an empty
+	// object, and an empty object is **true** in JavaScript. The
+	// frontend read the answer of the question about the autostart as a
+	// yes, took the silent branch, and hid the window: it flashed and
+	// disappeared at start-up.
+	if !theNeutralAnswersAreFalsy() {
+		fmt.Println("   FAIL: an answer of a feature BitMaher does not have is true")
+		_ = syscall.Kill(-pid, syscall.SIGKILL)
+		os.Exit(1)
+	}
+	fmt.Println("5. The answers of the features BitMaher does not have are falsy")
+
 	// The quit is asked for the way the interface asks for it: the
 	// runtime's own quit.
 	quitTheApplication()
@@ -102,7 +128,7 @@ func main() {
 	// same in both: the quit runs the shutdown, and the shutdown stops
 	// the engine.
 	if waitForExit(enginePID, 30*time.Second) {
-		fmt.Println("5. The engine was stopped by the shutdown")
+		fmt.Println("6. The engine was stopped by the shutdown")
 	} else {
 		fmt.Println("   FAIL: the engine outlived the quit")
 		_ = syscall.Kill(-enginePID, syscall.SIGKILL)
@@ -114,7 +140,7 @@ func main() {
 	if !waitForExit(pid, 20*time.Second) {
 		_ = syscall.Kill(-pid, syscall.SIGKILL)
 	}
-	fmt.Println("6. The application ended")
+	fmt.Println("7. The application ended")
 	fmt.Println("\nThe quit works: the shutdown runs, and the engine goes with it.")
 }
 
@@ -209,6 +235,88 @@ func quitTheApplication() {
 	if response.StatusCode != http.StatusOK {
 		fmt.Println("   FAIL: the request answered", response.Status)
 		os.Exit(1)
+	}
+}
+
+// theNeutralAnswersAreFalsy asks the application for the answers of the
+// features BitMaher does not have.
+//
+// The answers are read through the runtime, the way the frontend reads
+// them. A bound method is called by its name, with the name of the
+// service in front of it.
+func theNeutralAnswersAreFalsy() bool {
+	for _, method := range []string{"NeutralBool", "UnsupportedCommand"} {
+		args := "[]"
+		if method == "UnsupportedCommand" {
+			args = `["a_command_that_does_not_exist"]`
+		}
+
+		answer, err := callTheBackend(method, args)
+		if err != nil {
+			fmt.Println("   FAIL: the call of", method+":", err)
+			return false
+		}
+		if answer != "false" {
+			fmt.Printf("   FAIL: %s answered %q, want false\n", method, answer)
+			return false
+		}
+	}
+
+	// The value answer has to be nothing, and not an empty object: the
+	// frontend reads it as a value it has to work with.
+	answer, err := callTheBackend("NeutralValue", "[]")
+	if err != nil {
+		fmt.Println("   FAIL: the call of NeutralValue:", err)
+		return false
+	}
+	if answer != "null" {
+		fmt.Printf("   FAIL: NeutralValue answered %q, want null\n", answer)
+		return false
+	}
+
+	return true
+}
+
+// callTheBackend calls a bound method and returns the raw answer.
+func callTheBackend(method, args string) (string, error) {
+	body := strings.NewReader(fmt.Sprintf(
+		`{"object":%d,"method":%d,"args":{"call-id":"%s","methodName":"%s.%s","args":%s}}`,
+		runtimeObjectCall, runtimeMethodCall, method, appServiceName, method, args,
+	))
+
+	request, err := http.NewRequest(http.MethodPost, serverURL+"/wails/runtime", body)
+	if err != nil {
+		return "", err
+	}
+	request.Header.Set("Content-Type", "application/json")
+
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		return "", err
+	}
+	defer response.Body.Close()
+
+	payload, err := io.ReadAll(response.Body)
+	if err != nil {
+		return "", err
+	}
+	if response.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("the request answered %s: %s", response.Status, payload)
+	}
+
+	// The answer of the runtime is the value of the call itself.
+	var value any
+	if err := json.Unmarshal(payload, &value); err != nil {
+		return "", fmt.Errorf("the answer is not JSON: %w", err)
+	}
+
+	switch typed := value.(type) {
+	case bool:
+		return strconv.FormatBool(typed), nil
+	case nil:
+		return "null", nil
+	default:
+		return string(payload), nil
 	}
 }
 

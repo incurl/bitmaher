@@ -100,6 +100,8 @@ export function resolveCommand(
       return { method: APP_SERVICE + '.ReleaseWindowClose', args: [] };
     case 'minimize_window_to_tray':
       return { method: APP_SERVICE + '.MinimiseWindowToTray', args: [] };
+    case 'window_is_visible':
+      return { method: APP_SERVICE + '.WindowIsVisible', args: [] };
 
     // --- the console ------------------------------------------------------
     case 'clear_log_file':
@@ -333,13 +335,93 @@ export function resolveCommand(
     case 'system_shutdown':
       return { method: APP_SERVICE + '.Shutdown', args: [] };
 
-    default:
+    default: {
+      // The command belongs to a feature BitMaher does not have. It
+      // is answered with the neutral value of its type, so that the
+      // component that calls it stays inert.
+      const neutral = NEUTRAL_COMMANDS[command];
+      if (neutral === 'boolean') {
+        return { method: APP_SERVICE + '.NeutralBool', args: [] };
+      }
+      if (neutral === 'value') {
+        return { method: APP_SERVICE + '.NeutralValue', args: [] };
+      }
+
       // An unknown command is a sign that a feature was ported without
       // its backend. It is reported rather than silently ignored, so
       // that the gap is visible in the console.
       return { method: APP_SERVICE + '.UnsupportedCommand', args: [command] };
+    }
   }
 }
+
+/**
+ * The commands of the features BitMaher does not have, and the type
+ * each of them answers.
+ *
+ * A command that has no counterpart in BitMaher is answered rather
+ * than ignored, so that the gap is visible in the console. The answer
+ * has to be of the type the frontend expects, though: the runtime
+ * answers a method that returns nothing with an empty object, and an
+ * empty object is **true** in JavaScript. A question about a feature
+ * BitMaher does not have would then be answered with a yes, and the
+ * frontend would act on it — the window would hide itself at start-up,
+ * for instance.
+ *
+ * The commands that expect a boolean are answered with `false`, and
+ * the ones that expect a value are answered with nothing.
+ */
+const NEUTRAL_COMMANDS: Record<string, 'boolean' | 'value'> = {
+  // The autostart and the silent mode. The window stays visible.
+  is_autostart_launch: 'boolean',
+  peek_pending_deep_links_silent: 'boolean',
+  peek_pending_external_inputs_silent: 'boolean',
+  float_window_needs_relaunch: 'boolean',
+
+  // The float window and the add window.
+  float_panel_dismiss: 'value',
+  float_window_ready: 'value',
+  add_window_open: 'value',
+  add_window_prepare: 'value',
+
+  // The updater.
+  check_for_update: 'value',
+  apply_update: 'value',
+  cancel_update: 'value',
+  download_update: 'value',
+
+  // The tracker sources and the ed2k bootstrap.
+  fetch_tracker_sources: 'value',
+  get_ed2k_bootstrap_status: 'value',
+  sync_ed2k_bootstrap_files: 'value',
+
+  // The proxy, the http authentication and the system.
+  get_system_proxy: 'value',
+  normalize_proxy_bypass: 'value',
+  http_auth_find: 'value',
+  http_auth_save: 'value',
+  http_auth_mark_used: 'value',
+  get_association_status: 'value',
+  get_engine_conf_path: 'value',
+  restart_http_api: 'value',
+
+  // The protocol handler and the external inputs.
+  set_default_protocol_client: 'value',
+  set_autostart: 'value',
+  take_pending_deep_links: 'value',
+  take_pending_external_inputs: 'value',
+  take_pending_frontend_actions: 'value',
+
+  // The tray, the clipboard and the shutdown.
+  minimize_to_tray: 'value',
+  clipboard_offer: 'value',
+  cancel_shutdown: 'value',
+  cancel_download_request: 'value',
+  aria2_change_global_option: 'value',
+  aria2_move_download: 'value',
+  update_menu_labels: 'value',
+  update_tray_menu_labels: 'value',
+};
 
 /** Reads the exit code the application ends with. */
 function exitCodeOf(args: Record<string, unknown>): number {

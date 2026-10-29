@@ -180,3 +180,32 @@ func TestTheWholeConfigurationIsStored(t *testing.T) {
 		t.Errorf("the theme is %q, want dark", ui.Theme)
 	}
 }
+
+// TestTheNeutralAnswersAreFalsy pins the answers of the features
+// BitMaher does not have.
+//
+// The runtime answers a method that returns nothing with an empty
+// object, and an empty object is **true** in JavaScript. The frontend
+// would then read the answer of a question about a feature BitMaher
+// does not have as a yes, and act on it: the window hid itself at
+// start-up, because the question about the autostart was answered with
+// a yes.
+//
+// This is the mistake that made the window flash and disappear.
+func TestTheNeutralAnswersAreFalsy(t *testing.T) {
+	service := &AppService{}
+
+	if service.NeutralBool() {
+		t.Error("the neutral boolean is true")
+	}
+	if service.UnsupportedCommand("some_command") {
+		t.Error("the answer of an unsupported command is true")
+	}
+
+	// The value answer has to be a typed nil, and not the nil of an
+	// interface: the runtime turns the nil of an interface into an
+	// empty object, and an empty object is true in JavaScript.
+	if value := service.NeutralValue(); value != nil {
+		t.Errorf("the neutral value is %v, want nothing", value)
+	}
+}

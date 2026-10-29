@@ -136,3 +136,16 @@ func (s *AppService) MinimiseWindowToTray() {
 	}
 	s.window.Hide()
 }
+
+// WindowIsVisible answers whether the window is on the screen.
+//
+// The Wails runtime does not carry the question to the frontend, so it
+// is answered here. The frontend asks it before it hides the window:
+// a window that is already hidden does not need hiding again, and the
+// answer has to be the truth rather than an assumption.
+func (s *AppService) WindowIsVisible() bool {
+	if s == nil || s.window == nil {
+		return false
+	}
+	return s.window.IsVisible()
+}

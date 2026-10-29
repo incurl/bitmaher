@@ -67,6 +67,12 @@ owns the domain: the records, the status mapping, the service the bindings call.
 - **The frontend never talks to PocketBase or to the engine directly.** Every call goes through `internal/bindings` and the
   typed wrappers in `frontend/src/bindings/index.ts`. If a component needs new backend behaviour, add a method to `AppService`,
   regenerate the bindings, and add a wrapper.
+- **A command that has no backend must answer falsy.** The runtime answers a method that
+  returns nothing with an **empty object**, and an empty object is **true** in JavaScript.
+  A question about a feature BitMaher does not have would then be answered with a yes,
+  and the frontend would act on it — the window hid itself at start-up, that way. The
+  answers are `NeutralBool` (false) and `NeutralValue` (a **typed nil**, which marshals
+  to `null`; the nil of an interface becomes an empty object again).
 - **Never hand-edit `frontend/bindings/`.** It is generated and gitignored. Change the Go service, then run
   `wails3 task common:generate:bindings`.
 - **Never hand-edit `frontend/dist/`.** It is the `//go:embed` payload, built by Vite and gitignored.

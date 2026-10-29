@@ -109,9 +109,11 @@ const mainWindow: WindowHandle = {
   },
 
   async isVisible() {
-    // The runtime has no question about the visibility. The window is
-    // there: the webview is running inside it.
-    return true;
+    // The runtime does not carry the question to the frontend, so the
+    // backend answers it. The answer has to be the truth: the frontend
+    // hides the window when it is asked to, and a window that was
+    // already hidden does not need hiding again.
+    return invoke<boolean>('window_is_visible');
   },
 
   async isMaximized() {

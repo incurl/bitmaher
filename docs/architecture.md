@@ -196,6 +196,32 @@ The **restart** is the backend's business too, because the backend owns the side
 instance is started by the old one as it goes down, in a process group of its own, and it waits for the old one to be gone
 before it touches the database: the database belongs to one process at a time.
 
+## The neutral answers of the features BitMaher does not have
+
+The ported frontend asks for the features of Rayburst that BitMaher does
+not have. Those calls are answered, so that the components that use them
+stay inert and the gap is visible in the debug console.
+
+The answer has to be of the type the frontend expects, and the runtime
+makes that harder than it looks. A method that returns **nothing** is
+answered with an **empty object**, and an empty object is **true** in
+JavaScript. A question about a feature BitMaher does not have would
+then be answered with a yes, and the frontend would act on it.
+
+That is not a theory: the question about the autostart was answered with
+a yes, the frontend took the branch that hides the window, and the
+window flashed and disappeared at start-up.
+
+The answers are therefore two:
+
+- `NeutralBool` answers `false`, for the commands that expect a boolean.
+- `NeutralValue` answers a **typed nil**, for the commands that expect a
+  value. A typed nil is marshalled to `null`, which is the nothing the
+  frontend expects. The nil of an interface would be turned into an
+  empty object by the runtime, and would be true again.
+
+The command map knows which of the two each command wants.
+
 ## The access rules are the write gate
 
 The scaffold sets `ListRule` and `ViewRule` to `""` (public read) on `jobs` and `artifacts`, and leaves `app_settings` without

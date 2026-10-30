@@ -11,7 +11,6 @@ import { ref, h } from 'vue'
 import {
   getTaskUri,
   getTaskName,
-  resolveOpenTarget,
   canRestart,
   writeAppClipboardText,
   getSharingResultLabelKey,
@@ -19,7 +18,8 @@ import {
 } from '@shared/utils'
 import { getErrorMessage } from '@shared/utils/errorMessage'
 import { invoke } from '@tauri-apps/api/core'
-import { resolveTaskFilePath, requestFileRecheck } from '@/composables/useTaskPaths'
+import { requestFileRecheck } from '@/composables/useTaskPaths'
+import { revealTaskInFolder, resolveTaskOpenTarget } from '@/composables/useTaskReveal'
 import { logger } from '@shared/logger'
 import { NCheckbox, useDialog } from 'naive-ui'
 import type { Aria2Task, AppConfig, TaskDeletionOptions } from '@shared/types'
@@ -213,29 +213,13 @@ export function useTaskActions(deps: TaskActionsDeps) {
   }
 
   async function handleShowInFolder(task: Aria2Task) {
-    const files = task.files || []
-    if (files.length === 0) return
-
-    // Resolve correct path — archived location takes priority over aria2 original
-    const filePath = resolveTaskFilePath(task)
-
-    if (!filePath) return
     try {
-      const fileExists = await invoke<boolean>('check_path_exists', { path: filePath })
-      if (fileExists) {
-        await invoke('show_item_in_dir', { path: filePath })
+      // The record carries no file list, so the files are read from
+      // the engine when the user asks to see them.
+      const outcome = await revealTaskInFolder(task)
+      if (outcome === 'revealed') {
         message.success(t('task.open-folder-success'))
         return
-      }
-      // Fallback: file missing but BT folder or download dir may still exist
-      const fallback = await resolveOpenTarget(task)
-      if (fallback) {
-        const fallbackExists = await invoke<boolean>('check_path_exists', { path: fallback })
-        if (fallbackExists) {
-          await invoke('show_item_in_dir', { path: fallback })
-          message.success(t('task.open-folder-success'))
-          return
-        }
       }
       message.warning(t('task.file-not-exist'))
       requestFileRecheck()
@@ -247,9 +231,11 @@ export function useTaskActions(deps: TaskActionsDeps) {
   }
 
   async function handleOpenFile(task: Aria2Task) {
-    const target = await resolveOpenTarget(task)
-    if (!target) return
     try {
+      // The record carries no file list, so the files are read from
+      // the engine when the user asks to open them.
+      const target = await resolveTaskOpenTarget(task)
+      if (!target) return
       const fileExists = await invoke<boolean>('check_path_exists', { path: target })
       if (!fileExists) {
         message.warning(t('task.file-not-exist'))

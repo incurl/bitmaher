@@ -338,9 +338,13 @@ export function resolveCommand(
       return { method: APP_SERVICE + '.SetDetailedTask', args: [nullableString(args, 'gid')] };
     case 'engine_supervisor_state':
       return { method: APP_SERVICE + '.EngineState', args: [] };
+    // Opening a path and showing it in the file manager are two
+    // different things: the first opens the file with the program that
+    // reads it, the second reveals it in the file manager.
     case 'show_item_in_dir':
-    case 'open_path_normalized':
       return { method: APP_SERVICE + '.ShowInFolder', args: [stringOf(args, 'path')] };
+    case 'open_path_normalized':
+      return { method: APP_SERVICE + '.OpenPath', args: [stringOf(args, 'path')] };
     case 'check_path_exists':
       return { method: APP_SERVICE + '.PathExists', args: [stringOf(args, 'path')] };
     case 'disk_free_space':

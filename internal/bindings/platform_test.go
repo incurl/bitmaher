@@ -2,10 +2,171 @@ package bindings
 
 import (
 	"fmt"
+	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/incurl/bitmaher/internal/pocketbase"
 )
+
+// TestShowInFolderNeedsAPath verifies that a path is asked for.
+//
+// The command that answers nothing would be read as a success.
+func TestShowInFolderNeedsAPath(t *testing.T) {
+	service := newTestService(t)
+
+	if err := service.ShowInFolder(""); err == nil {
+		t.Error("an empty path should be refused")
+	}
+}
+
+// TestShowInFolderRefusesAPathThatIsNotThere verifies that a path that
+// does not exist is refused.
+//
+// The frontend asks for the folder of a file that may have been
+// deleted, and the answer has to say so.
+func TestShowInFolderRefusesAPathThatIsNotThere(t *testing.T) {
+	service := newTestService(t)
+
+	missing := filepath.Join(t.TempDir(), "not-there")
+	if err := service.ShowInFolder(missing); err == nil {
+		t.Error("a path that is not there should be refused")
+	}
+}
+
+// TestOpenPathNeedsAPath verifies that a path is asked for.
+func TestOpenPathNeedsAPath(t *testing.T) {
+	service := newTestService(t)
+
+	if err := service.OpenPath(""); err == nil {
+		t.Error("an empty path should be refused")
+	}
+}
+
+// TestOpenPathRefusesAPathThatIsNotThere verifies that a path that does
+// not exist is refused.
+func TestOpenPathRefusesAPathThatIsNotThere(t *testing.T) {
+	service := newTestService(t)
+
+	missing := filepath.Join(t.TempDir(), "not-there")
+	if err := service.OpenPath(missing); err == nil {
+		t.Error("a path that is not there should be refused")
+	}
+}
+
+// TestRevealingAFolderOpensTheFolderItself verifies the two shapes of
+// the reveal.
+//
+// A torrent's content lives in a folder of its own, and the folder is
+// what the user asked to see. Revealing it must not open the folder
+// that holds it: that would be the wrong folder.
+func TestRevealingAFolderOpensTheFolderItself(t *testing.T) {
+	folder := filepath.Join(t.TempDir(), "Big Buck Bunny")
+
+	program, args := revealCommand(folder, true)
+
+	if runtime.GOOS == "darwin" {
+		if program != "open" {
+			t.Errorf("program = %q, want open", program)
+		}
+		if len(args) != 1 || args[0] != folder {
+			t.Errorf("args = %v, want the folder itself", args)
+		}
+		return
+	}
+
+	if runtime.GOOS == "windows" {
+		if program != "explorer" {
+			t.Errorf("program = %q, want explorer", program)
+		}
+		if len(args) != 1 || args[0] != folder {
+			t.Errorf("args = %v, want the folder itself", args)
+		}
+		return
+	}
+
+	if program != "xdg-open" {
+		t.Errorf("program = %q, want xdg-open", program)
+	}
+	if len(args) != 1 || args[0] != folder {
+		t.Errorf("args = %v, want the folder itself", args)
+	}
+}
+
+// TestRevealingAFileOpensTheFolderThatHoldsIt verifies that a file is
+// revealed through the folder that holds it.
+//
+// The folder of the file is what the file manager shows, and the file
+// is marked in it where the operating system allows it.
+func TestRevealingAFileOpensTheFolderThatHoldsIt(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "movie.mkv")
+
+	program, args := revealCommand(file, false)
+
+	switch runtime.GOOS {
+	case "darwin":
+		if program != "open" {
+			t.Errorf("program = %q, want open", program)
+		}
+		if len(args) != 2 || args[0] != "-R" || args[1] != file {
+			t.Errorf("args = %v, want the file marked", args)
+		}
+	case "windows":
+		if program != "explorer" {
+			t.Errorf("program = %q, want explorer", program)
+		}
+		if len(args) != 2 || args[1] != file {
+			t.Errorf("args = %v, want the file selected", args)
+		}
+	default:
+		if program != "xdg-open" {
+			t.Errorf("program = %q, want xdg-open", program)
+		}
+		if len(args) != 1 || args[0] != filepath.Dir(file) {
+			t.Errorf("args = %v, want the folder that holds the file", args)
+		}
+	}
+}
+
+// TestOpeningAPathUsesTheProgramOfTheSystem verifies that opening a
+// path and revealing it are two different things.
+//
+// Opening a file must start the program that reads it, and not the file
+// manager: the two commands were the same one, and the file was never
+// opened.
+func TestOpeningAPathUsesTheProgramOfTheSystem(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "movie.mkv")
+
+	program, args := openCommand(file)
+
+	switch runtime.GOOS {
+	case "darwin":
+		if program != "open" {
+			t.Errorf("program = %q, want open", program)
+		}
+	case "windows":
+		if program != "rundll32" {
+			t.Errorf("program = %q, want rundll32", program)
+		}
+	default:
+		if program != "xdg-open" {
+			t.Errorf("program = %q, want xdg-open", program)
+		}
+	}
+
+	if len(args) == 0 || args[len(args)-1] != file {
+		t.Errorf("args = %v, want the path itself", args)
+	}
+
+	// The reveal of a file opens the folder that holds it on the
+	// desktop, so the two commands cannot be the same one there.
+	if runtime.GOOS != "darwin" && runtime.GOOS != "windows" {
+		revealProgram, revealArgs := revealCommand(file, false)
+		if revealProgram == program && revealArgs[0] == args[0] {
+			t.Error("opening a path and revealing it should not be the same command")
+		}
+	}
+}
 
 // TestTheInterfaceSizeIsStored verifies that the size of the interface
 // survives the round trip through the settings.

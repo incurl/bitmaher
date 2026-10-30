@@ -59,6 +59,32 @@ describe('the lifecycle commands', () => {
   })
 })
 
+describe('the commands of the files', () => {
+  it('reveals a path in the file manager', () => {
+    expect(resolveCommand('show_item_in_dir', { path: '/downloads/movie.mkv' })).toEqual({
+      method: APP_SERVICE + '.ShowInFolder',
+      args: ['/downloads/movie.mkv'],
+    })
+  })
+
+  it('opens a path with the program of the system', () => {
+    // Opening a file and showing it in the file manager are two
+    // different things. They were the same command, so "Open file"
+    // opened the file manager instead of the file.
+    expect(resolveCommand('open_path_normalized', { path: '/downloads/movie.mkv' })).toEqual({
+      method: APP_SERVICE + '.OpenPath',
+      args: ['/downloads/movie.mkv'],
+    })
+  })
+
+  it('answers whether a path is there', () => {
+    expect(resolveCommand('check_path_exists', { path: '/downloads' })).toEqual({
+      method: APP_SERVICE + '.PathExists',
+      args: ['/downloads'],
+    })
+  })
+})
+
 describe('the commands of the features BitMaher does not have', () => {
   it('answers the questions about the autostart with a no', () => {
     // The runtime answers a method that returns nothing with an empty

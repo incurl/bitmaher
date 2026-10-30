@@ -62,6 +62,7 @@ var expectedMethods = []string{
 	"OpenDefaultAppsSettings",
 	"OpenExternalURL",
 	"OpenNotificationSettings",
+	"OpenPath",
 	"PathExists",
 	"PathIsDirectory",
 	"PauseDownload",

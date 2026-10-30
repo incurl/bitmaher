@@ -11,10 +11,11 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 import { listen } from '@tauri-apps/api/event'
 import { logger } from '@shared/logger'
 import { isMetadataTask } from '@/composables/useTaskLifecycle'
-import { resolveTaskFilePath, requestFileRecheck } from '@/composables/useTaskPaths'
+import { requestFileRecheck } from '@/composables/useTaskPaths'
+import { revealTaskInFolder, resolveTaskOpenTarget } from '@/composables/useTaskReveal'
 import { handleTaskComplete, handleP2pDownloadComplete, handleTaskError } from '@/composables/useTaskNotifyHandlers'
 import { shouldDeleteTorrent, trashTorrentFile } from '@/composables/useDownloadCleanup'
-import { getTaskName, resolveOpenTarget, checkTaskIsSharing, getTaskSharingKind } from '@shared/utils'
+import { getTaskName, checkTaskIsSharing, getTaskSharingKind } from '@shared/utils'
 import type { TaskSharingKind } from '@shared/utils/task'
 import { toSnapshot, type RawSnapshot } from '@/platform/tasks'
 import type { Aria2Task, FloatWindowMode } from '@shared/types'
@@ -173,10 +174,12 @@ let unlistenFocusRecheck: (() => void) | null = null
  *   - `open_path_normalized` to invoke the system opener
  */
 async function openFileFromNotification(task: Aria2Task) {
-  const { invoke } = await import('@tauri-apps/api/core')
-  const target = await resolveOpenTarget(task)
-  if (!target) return
   try {
+    // The record carries no file list, so the files are read from the
+    // engine when the user asks to open them.
+    const target = await resolveTaskOpenTarget(task)
+    if (!target) return
+    const { invoke } = await import('@tauri-apps/api/core')
     const fileExists = await invoke<boolean>('check_path_exists', { path: target })
     if (!fileExists) {
       message.warning(t('task.file-not-exist'))
@@ -201,28 +204,13 @@ async function openFileFromNotification(task: Aria2Task) {
  *   - `show_item_in_dir` to invoke the platform-native file reveal
  */
 async function showInFolderFromNotification(task: Aria2Task) {
-  const { invoke } = await import('@tauri-apps/api/core')
-
-  // Resolve correct path — archived location takes priority over aria2 original
-  const filePath = resolveTaskFilePath(task)
-
-  if (!filePath) return
   try {
-    const fileExists = await invoke<boolean>('check_path_exists', { path: filePath })
-    if (fileExists) {
-      await invoke('show_item_in_dir', { path: filePath })
+    // The record carries no file list, so the files are read from the
+    // engine when the user asks to see them.
+    const outcome = await revealTaskInFolder(task)
+    if (outcome === 'revealed') {
       message.success(t('task.open-folder-success'))
       return
-    }
-    // Fallback: file missing but BT folder or download dir may still exist
-    const fallback = await resolveOpenTarget(task)
-    if (fallback) {
-      const fallbackExists = await invoke<boolean>('check_path_exists', { path: fallback })
-      if (fallbackExists) {
-        await invoke('show_item_in_dir', { path: fallback })
-        message.success(t('task.open-folder-success'))
-        return
-      }
     }
     message.warning(t('task.file-not-exist'))
     requestFileRecheck()

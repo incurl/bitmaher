@@ -105,25 +105,92 @@ func (s *AppService) WriteLocalFile(path, contents string) error {
 }
 
 // ShowInFolder shows a path in the file manager of the operating system.
+//
+// A file is revealed: the file manager opens its folder and marks the
+// file. A folder is opened itself, because the folder is what the user
+// asked to see.
 func (s *AppService) ShowInFolder(path string) error {
 	if path == "" {
 		return fmt.Errorf("no path was given")
 	}
 
-	var command *exec.Cmd
-	switch runtime.GOOS {
-	case "darwin":
-		command = exec.Command("open", "-R", path)
-	case "windows":
-		command = exec.Command("explorer", "/select,", path)
-	default:
-		command = exec.Command("xdg-open", filepath.Dir(path))
+	info, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("the path could not be read: %w", err)
 	}
 
+	program, args := revealCommand(path, info.IsDir())
+
+	command := exec.Command(program, args...)
 	if err := command.Run(); err != nil {
 		return fmt.Errorf("the folder could not be opened: %w", err)
 	}
 	return nil
+}
+
+// revealCommand is the command that shows a path in the file manager.
+//
+// A file is marked in the folder that holds it, and a folder is opened
+// itself. There is no portable way of marking a file in the file
+// manager of the desktop, so the folder that holds it is opened there.
+func revealCommand(path string, isDir bool) (string, []string) {
+	switch runtime.GOOS {
+	case "darwin":
+		if isDir {
+			return "open", []string{path}
+		}
+		return "open", []string{"-R", path}
+	case "windows":
+		if isDir {
+			return "explorer", []string{path}
+		}
+		return "explorer", []string{"/select,", path}
+	default:
+		if isDir {
+			return "xdg-open", []string{path}
+		}
+		return "xdg-open", []string{filepath.Dir(path)}
+	}
+}
+
+// OpenPath opens a path with the program the operating system chooses.
+//
+// It is not the same thing as showing a path in the file manager: a
+// file is opened with the program that reads it, and a folder is opened
+// as a folder.
+func (s *AppService) OpenPath(path string) error {
+	if path == "" {
+		return fmt.Errorf("no path was given")
+	}
+
+	if _, err := os.Stat(path); err != nil {
+		return fmt.Errorf("the path could not be read: %w", err)
+	}
+
+	program, args := openCommand(path)
+
+	command := exec.Command(program, args...)
+
+	// The program the operating system chooses is started and not
+	// waited for: it is a window of its own, and the application does
+	// not have to wait for the user to close it.
+	if err := command.Start(); err != nil {
+		return fmt.Errorf("the path could not be opened: %w", err)
+	}
+	return nil
+}
+
+// openCommand is the command that opens a path with the program the
+// operating system chooses.
+func openCommand(path string) (string, []string) {
+	switch runtime.GOOS {
+	case "darwin":
+		return "open", []string{path}
+	case "windows":
+		return "rundll32", []string{"url.dll,FileProtocolHandler", path}
+	default:
+		return "xdg-open", []string{path}
+	}
 }
 
 // OpenExternalURL opens a URL in the default browser.

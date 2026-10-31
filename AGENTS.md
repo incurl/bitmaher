@@ -382,5 +382,7 @@ Everything lives in `pb_data/` next to the executable: `data.db`, `storage/`, `.
 - `docs/architecture.md` explains why the pieces are shaped the way they are.
 - `docs/troubleshooting.md` collects the failures that cost time, and what actually fixes them.
 - `CONTEXT.md` is the vocabulary: what each term in this codebase means.
+- `docs/gap-analysis-rayburst.md` is the gap between BitMaher and Rayburst: what the port answers,
+  what it leaves inert, and the four commands whose neutral answer reads as a success it did not give.
 - `THIRD_PARTY_NOTICES.md` is the licensing story, including the GPL engine.
 - `.agents/skills/` holds task-scoped skills with step-by-step procedures.

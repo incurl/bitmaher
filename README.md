@@ -140,6 +140,17 @@ cd frontend && pnpm run typecheck && pnpm test && pnpm run build
 python3 tools/license-audit.py
 ```
 
+## The documentation
+
+| The document | What it is for |
+| --- | --- |
+| [docs/architecture.md](docs/architecture.md) | Why the pieces are shaped the way they are |
+| [docs/gap-analysis-rayburst.md](docs/gap-analysis-rayburst.md) | The gap between BitMaher and the interface it was ported from: what is answered, what is inert, and what lies |
+| [docs/troubleshooting.md](docs/troubleshooting.md) | The failures that cost time, and what fixes them |
+| [docs/handbook/](docs/handbook/) | The companion book: Wails, Go, Aria2-Next, PocketBase and Vue |
+| [CONTEXT.md](CONTEXT.md) | The vocabulary of the codebase |
+| [AGENTS.md](AGENTS.md) | The rules an agent follows in this repository |
+
 ## The licence
 
 The application is MIT licensed. See [LICENSE](LICENSE).

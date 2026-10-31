@@ -22,6 +22,66 @@ export const getTaskCompletedLength = (task: Aria2Task): number => {
   return parseLength(task.completedLength)
 }
 
+/**
+ * The scope a download belongs to.
+ *
+ * The four scopes are exclusive: a download is in exactly one of them.
+ */
+export type TaskScopeKind = 'progress' | 'completed' | 'failed'
+
+/**
+ * Reports whether the download has all of its content on the disk.
+ *
+ * The engine keeps the status "active" for a torrent that has finished
+ * and is seeding, and a download the user paused keeps the status
+ * "paused". Neither of them says that the download itself is over: the
+ * lengths do.
+ */
+export const checkTaskIsFinished = (task: Aria2Task): boolean => {
+  const total = parseLength(task.totalLength)
+  if (total <= 0) return false
+  return getTaskCompletedLength(task) >= total
+}
+
+/**
+ * The scope a download belongs to.
+ *
+ * A download that has come to rest is in "completed", whether the
+ * engine says so, or whether it kept the status of a running download
+ * because the user paused it after the content was on the disk.
+ *
+ * A download that failed is in "failed".
+ *
+ * Everything else is in "progress": it is still going.
+ *
+ * A torrent that is sharing what it has is the one exception. The
+ * engine keeps it running so that it seeds, and the user still has
+ * things to do with it: pause it, resume it, stop the sharing. It
+ * stays in "progress", so that those actions are where the user
+ * expects them.
+ */
+export const getTaskScope = (task: Aria2Task): TaskScopeKind => {
+  if (task.status === 'error') return 'failed'
+  if (task.status === 'complete' || task.status === 'removed') return 'completed'
+  // A download that is sharing what it has is over as a download, but
+  // it is still working, and the user still acts on it.
+  if (task.seeder === 'true') return 'progress'
+  // A download that was paused after it was finished is over as well.
+  if (task.status === 'paused' && checkTaskIsFinished(task)) return 'completed'
+  return 'progress'
+}
+
+/**
+ * Reports whether the download is one that is still going.
+ *
+ * It is the same question as the scope, and it is asked in one place:
+ * a download that has come to rest is not one that is going, whatever
+ * the engine says about it.
+ */
+export const checkTaskIsLive = (task: Aria2Task): boolean => {
+  return getTaskScope(task) === 'progress'
+}
+
 const getFileNameFromFile = (file?: Aria2File): string => {
   if (!file) return ''
   const { path } = file

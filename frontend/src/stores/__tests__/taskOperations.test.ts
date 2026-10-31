@@ -163,6 +163,36 @@ describe('finishSharing', () => {
     expect(deps.fetchList).toHaveBeenCalledOnce()
     expect(api.saveSession).not.toHaveBeenCalled()
   })
+
+  it('reports the failure of the backend, and it does not throw it away', async () => {
+    // The backend could not stop the sharing: the user has to be told,
+    // and the list has to be read again all the same.
+    const api = createMockApi()
+    api.finishSharing = vi.fn().mockRejectedValue(new Error('the engine refused'))
+    const deps = createDeps(api)
+    const ops = createTaskOperations(deps)
+    const task = makeTask({ gid: 'seed-1', seeder: 'true', bittorrent: { state: 'seeding' } })
+
+    await expect(ops.finishSharing(task)).rejects.toThrow('the engine refused')
+
+    expect(deps.fetchList).toHaveBeenCalledOnce()
+  })
+
+  it('reports which of the sharings could not be stopped', async () => {
+    const api = createMockApi()
+    api.batchFinishSharing = vi.fn().mockResolvedValue({
+      succeeded: ['bt'],
+      failed: [{ gid: 'ed2k', message: 'the engine refused' }],
+    })
+    const deps = createDeps(api)
+    const ops = createTaskOperations(deps)
+
+    const result = await ops.finishSharingTasks(['bt', 'ed2k'])
+
+    expect(result.succeeded).toEqual(['bt'])
+    expect(result.failed).toEqual([{ gid: 'ed2k', message: 'the engine refused' }])
+    expect(deps.fetchList).toHaveBeenCalledOnce()
+  })
 })
 
 // pauseTask

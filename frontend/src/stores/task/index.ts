@@ -6,6 +6,7 @@ import { useTaskSelectionStore, type SelectionRequest } from '@/stores/taskSelec
 import { computed, reactive, ref, watch } from 'vue'
 import { EMPTY_STRING } from '@shared/constants'
 import { checkTaskIsEd2kSearch } from '@shared/utils'
+import { checkTaskIsLive, getTaskScope } from '@shared/utils/task'
 import { logger } from '@shared/logger'
 import type {
   Aria2Task,
@@ -49,7 +50,7 @@ const DEFAULT_TASK_PAGE_SIZE = 20
 const TASK_SCOPES: readonly TaskScope[] = ['all', 'progress', 'failed', 'completed']
 
 function isLiveTask(task: Aria2Task): boolean {
-  return task.status === 'active' || task.status === 'waiting' || task.status === 'paused'
+  return checkTaskIsLive(task)
 }
 
 function normalizeTaskScope(list: string): TaskScope {
@@ -231,8 +232,16 @@ export const useTaskStore = defineStore('task', () => {
       liveSnapshot.filter((task) => ['complete', 'removed'].includes(task.status)).map((task) => task.gid),
     )
     const removing = new Set(removingGids.value)
+    // The downloads the history holds. A download that is in both is
+    // shown once, and the history is the one that counts.
+    const historyGids = new Set(historyRecords.map((record) => record.gid))
     const tasks = mergeHistoryIntoTasks(
-      liveSnapshot.filter((task) => task.status !== 'removed'),
+      // A download that has come to rest is in the history, and the live
+      // snapshot does not hold it any more. A download the engine has
+      // removed is still one the user can see: it stays in the list, and
+      // it is marked as removed. It is dropped here only when the
+      // history holds it as well, so that it is not shown twice.
+      liveSnapshot.filter((task) => task.status !== 'removed' || !historyGids.has(task.gid)),
       historyRecords,
     ).filter(
       (task) => !removing.has(task.gid) && !checkTaskIsEd2kSearch(task) && (isLiveTask(task) || !isMetadataTask(task)),
@@ -241,13 +250,13 @@ export const useTaskStore = defineStore('task', () => {
     Object.assign(taskCounts, {
       all: tasks.length,
       progress: tasks.filter(isLiveTask).length,
-      completed: tasks.filter((task) => task.status === 'complete').length,
-      failed: tasks.filter((task) => task.status === 'error').length,
+      completed: tasks.filter((task) => getTaskScope(task) === 'completed').length,
+      failed: tasks.filter((task) => getTaskScope(task) === 'failed').length,
     })
     const data = tasks.filter(
       (task) =>
         scope === 'all' ||
-        (scope === 'progress' ? isLiveTask(task) : task.status === (scope === 'failed' ? 'error' : 'complete')),
+        (scope === 'progress' ? isLiveTask(task) : getTaskScope(task) === scope),
     )
     loadAddedAtFromRecords(historyRecords)
     trackFirstSeen(data)

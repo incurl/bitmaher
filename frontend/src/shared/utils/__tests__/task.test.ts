@@ -15,6 +15,9 @@ import {
   getTaskUri,
   resolveOpenTarget,
   getRestartDescriptors,
+  getTaskScope,
+  checkTaskIsLive,
+  checkTaskIsFinished,
 } from '../task'
 import type { Aria2Task, Aria2File } from '@shared/types'
 
@@ -662,5 +665,76 @@ describe('getRestartDescriptors', () => {
   it('returns empty for task with no files and no BT info', () => {
     const task = createMockTask({ files: [] })
     expect(getRestartDescriptors(task)).toEqual([])
+  })
+})
+
+// ── the scope of a download ─────────────────────────────────────────
+
+describe('the scope of a download', () => {
+  it('puts a running download in progress', () => {
+    expect(getTaskScope(createMockTask({ status: 'active' }))).toBe('progress')
+    expect(getTaskScope(createMockTask({ status: 'waiting' }))).toBe('progress')
+    expect(getTaskScope(createMockTask({ status: 'paused' }))).toBe('progress')
+  })
+
+  it('puts a download that failed in failed', () => {
+    expect(getTaskScope(createMockTask({ status: 'error' }))).toBe('failed')
+  })
+
+  it('puts a download that is over in completed', () => {
+    expect(getTaskScope(createMockTask({ status: 'complete' }))).toBe('completed')
+    expect(getTaskScope(createMockTask({ status: 'removed' }))).toBe('completed')
+  })
+
+  it('puts a download that was paused after it was finished in completed', () => {
+    // The engine says "paused", and the content is on the disk: the
+    // download itself is over, whatever the engine says about it.
+    const task = createMockTask({
+      status: 'paused',
+      totalLength: '1000',
+      completedLength: '1000',
+    })
+
+    expect(checkTaskIsFinished(task)).toBe(true)
+    expect(getTaskScope(task)).toBe('completed')
+    expect(checkTaskIsLive(task)).toBe(false)
+  })
+
+  it('keeps a download that was paused half way in progress', () => {
+    const task = createMockTask({
+      status: 'paused',
+      totalLength: '1000',
+      completedLength: '400',
+    })
+
+    expect(checkTaskIsFinished(task)).toBe(false)
+    expect(getTaskScope(task)).toBe('progress')
+    expect(checkTaskIsLive(task)).toBe(true)
+  })
+
+  it('keeps a torrent that is sharing what it has in progress', () => {
+    // The engine keeps it running so that it seeds, and the user still
+    // has things to do with it: pause it, resume it, stop the sharing.
+    const task = createMockTask({
+      status: 'active',
+      seeder: 'true',
+      totalLength: '1000',
+      completedLength: '1000',
+    })
+
+    expect(getTaskScope(task)).toBe('progress')
+    expect(checkTaskIsLive(task)).toBe(true)
+  })
+
+  it('does not call a download of no size finished', () => {
+    // A magnet whose metadata has not arrived has no size yet.
+    const task = createMockTask({
+      status: 'paused',
+      totalLength: '0',
+      completedLength: '0',
+    })
+
+    expect(checkTaskIsFinished(task)).toBe(false)
+    expect(getTaskScope(task)).toBe('progress')
   })
 })

@@ -342,7 +342,95 @@ describe('TaskStore', () => {
       expect(store.taskList.map((task) => task.gid)).toEqual(['torrent'])
     })
 
+    it('keeps a finished download that is paused out of In Progress', async () => {
+      // The download is over: everything is on the disk. The user
+      // paused it, and a paused download is not one that is going.
+      const finished = makeMockTask('finished', 'paused', {
+        totalLength: '1000',
+        completedLength: '1000',
+      })
+      const running = makeMockTask('running', 'active', {
+        totalLength: '1000',
+        completedLength: '400',
+      })
+      mockApi.fetchTaskList.mockResolvedValueOnce([finished, running])
+
+      await store.changeCurrentList('progress')
+
+      expect(store.taskList.map((task) => task.gid)).toEqual(['running'])
+    })
+
+    it('puts a finished download that is paused in Completed', async () => {
+      const finished = makeMockTask('finished', 'paused', {
+        totalLength: '1000',
+        completedLength: '1000',
+      })
+      mockApi.fetchTaskList.mockResolvedValueOnce([finished])
+
+      await store.changeCurrentList('completed')
+
+      expect(store.taskList.map((task) => task.gid)).toEqual(['finished'])
+    })
+
+    it('puts a removed download in Completed, for it is over', async () => {
+      // The sharing was stopped: the download is over, and the user
+      // has to be able to find it.
+      const removed = makeMockTask('removed', 'removed')
+      mockApi.fetchTaskList.mockResolvedValueOnce([removed])
+
+      await store.changeCurrentList('completed')
+
+      expect(store.taskList.map((task) => task.gid)).toEqual(['removed'])
+    })
+
+    it('counts a finished download that is paused in Completed', async () => {
+      const finished = makeMockTask('finished', 'paused', {
+        totalLength: '1000',
+        completedLength: '1000',
+      })
+      const running = makeMockTask('running', 'active', {
+        totalLength: '1000',
+        completedLength: '400',
+      })
+      mockApi.fetchTaskList.mockResolvedValueOnce([finished, running])
+
+      await store.fetchList()
+
+      expect(store.taskCounts).toEqual({ all: 2, progress: 1, failed: 0, completed: 1 })
+    })
+
+    it('keeps the scopes working when a history record has no metadata', async () => {
+      // The meta column of a record that was never given metadata is
+      // the JSON null. It used to throw while the snapshot was
+      // published, and the throw left the list frozen at whatever the
+      // "All" scope had: every other scope showed every task.
+      const noMeta = {
+        gid: 'done1',
+        name: 'done one',
+        status: 'complete',
+        task_type: 'magnet',
+        total_length: 524288,
+        meta: 'null',
+      } as unknown as HistoryRecord
+
+      mockHistoryFns.getRecords.mockResolvedValue([noMeta])
+      mockApi.fetchTaskList.mockResolvedValue([
+        makeMockTask('running', 'active', { totalLength: '1000', completedLength: '400' }),
+        makeMockTask('bad', 'error'),
+      ])
+
+      await store.changeCurrentList('failed')
+      expect(store.taskList.map((task) => task.gid)).toEqual(['bad'])
+
+      await store.changeCurrentList('completed')
+      expect(store.taskList.map((task) => task.gid)).toEqual(['done1'])
+
+      await store.changeCurrentList('progress')
+      expect(store.taskList.map((task) => task.gid)).toEqual(['running'])
+    })
+
     it('shows errors only in Failed', async () => {
+
       mockHistoryFns.getRecords.mockResolvedValueOnce([
         { gid: 'error', name: 'error.zip', status: 'error' } as HistoryRecord,
       ])
@@ -1038,4 +1126,40 @@ describe('TaskStore', () => {
       expect(store.consumeTorrentSource('abc123')).toBe('/new/path.torrent')
     })
   })
+
+// ─── stopping the sharing ────────────────────────────────────────────
+
+describe('stopping the sharing', () => {
+  it('keeps the task in the list, and it is no longer one that is going', async () => {
+    // The download the engine has removed is still one the user can see:
+    // it was dropped from the list altogether, so the task vanished
+    // instead of being deactivated.
+    mockApi.fetchTaskList.mockResolvedValueOnce([
+      makeMockTask('stopped', 'removed', { seeder: undefined }),
+    ])
+    store.currentList = 'all'
+
+    await store.fetchList()
+
+    expect(store.taskList.map((task) => task.gid)).toEqual(['stopped'])
+    expect(store.taskList[0].status).toBe('removed')
+    // It is not one of the downloads the user is waiting for any more:
+    // it is one of the downloads that are over.
+    expect(store.taskCounts).toEqual({ all: 1, progress: 0, completed: 1, failed: 0 })
+  })
+
+  it('shows it once, when the history holds it as well', async () => {
+    mockApi.fetchTaskList.mockResolvedValueOnce([
+      makeMockTask('stopped', 'removed', { seeder: undefined }),
+    ])
+    mockHistoryFns.getRecords.mockResolvedValueOnce([
+      { gid: 'stopped', name: 'torrent', status: 'removed' } as HistoryRecord,
+    ])
+    store.currentList = 'all'
+
+    await store.fetchList()
+
+    expect(store.taskList.filter((task) => task.gid === 'stopped')).toHaveLength(1)
+  })
+})
 })

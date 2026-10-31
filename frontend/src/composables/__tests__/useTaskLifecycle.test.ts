@@ -8,7 +8,7 @@ vi.mock('@tauri-apps/plugin-fs', () => ({
   remove: vi.fn().mockResolvedValue(undefined),
 }))
 
-const { isMetadataTask, historyRecordToTask, mergeHistoryIntoTasks, extractHistoryFilePaths } =
+const { isMetadataTask, historyRecordToTask, mergeHistoryIntoTasks, extractHistoryFilePaths, parseHistoryMeta } =
   await import('../useTaskLifecycle')
 
 // ── Test data factories ──────────────────────────────────────────────
@@ -337,5 +337,54 @@ describe('extractHistoryFilePaths', () => {
   it('returns empty array when both dir and name are missing', () => {
     const paths = extractHistoryFilePaths(makeRecord({ dir: undefined, name: '', meta: undefined }))
     expect(paths).toEqual([])
+  })
+})
+
+// ── a record whose metadata is the JSON null ─────────────────────────
+
+// The meta column of a history record that was never given metadata
+// holds the literal null. The backend passed that string on to the
+// interface, the parse of it gave null, and the record threw on its
+// first field read. The throw happened inside the snapshot publish, so
+// the whole task list stopped updating: every scope showed what the
+// "All" list had when it last worked.
+const nullMetaRecord = {
+  gid: 'no-meta',
+  name: 'Small Prophets',
+  status: 'complete',
+  task_type: 'magnet',
+  total_length: 524288,
+  dir: '/downloads',
+  meta: 'null',
+} as unknown as HistoryRecord
+
+describe('a history record whose metadata is null', () => {
+  it('parses to an empty metadata object', () => {
+    expect(parseHistoryMeta(nullMetaRecord)).toEqual({})
+  })
+
+  it('does not throw when it is turned into a task', () => {
+    expect(() => historyRecordToTask(nullMetaRecord)).not.toThrow()
+    const task = historyRecordToTask(nullMetaRecord)
+    expect(task.gid).toBe('no-meta')
+    expect(task.status).toBe('complete')
+    expect(task.totalLength).toBe('524288')
+  })
+
+  it('does not take the list down when it is merged in', () => {
+    expect(() => mergeHistoryIntoTasks([], [nullMetaRecord])).not.toThrow()
+    expect(mergeHistoryIntoTasks([], [nullMetaRecord])).toHaveLength(1)
+  })
+
+  it('is left alone when the metadata is a list or a scalar', () => {
+    for (const meta of ['[]', '"a string"', '7', 'true']) {
+      const record = { ...nullMetaRecord, meta } as unknown as HistoryRecord
+      expect(parseHistoryMeta(record)).toEqual({})
+    }
+  })
+
+  it('still reads the metadata it does understand', () => {
+    const record = { ...nullMetaRecord, meta: '{"completedLength":"42"}' } as unknown as HistoryRecord
+    expect(parseHistoryMeta(record)).toEqual({ completedLength: '42' })
   })
 })

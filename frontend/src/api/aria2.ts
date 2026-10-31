@@ -334,17 +334,32 @@ export async function addTorrent(params: AddTorrentParams): Promise<string> {
 /**
  * Finishes the sharing of a download.
  *
- * The backend has no such call: the engine keeps seeding on its own.
+ * The engine has no call for it: a torrent that has finished keeps
+ * running so that it seeds. The backend removes the download from the
+ * engine, which ends the sharing at once.
  */
 export async function finishSharing(params: { gid: string }): Promise<void> {
-  logger.debug('api.finishSharing', `the backend does not stop the sharing of ${params.gid}`);
+  await AppService.StopDownloadSharing(params.gid);
 }
 
 /**
  * Finishes the sharing of a set of downloads.
  */
 export async function batchFinishSharing(params: { gids: string[] }): Promise<BatchTaskOperationResult> {
-  return { succeeded: params.gids, failed: [] };
+  const succeeded: string[] = [];
+  const failed: BatchTaskFailure[] = [];
+
+  for (const gid of params.gids) {
+    try {
+      await AppService.StopDownloadSharing(gid);
+      succeeded.push(gid);
+    } catch (error) {
+      failed.push({ gid, message: String(error) });
+      logger.warn('api.batchFinishSharing', error);
+    }
+  }
+
+  return { succeeded, failed };
 }
 
 /**

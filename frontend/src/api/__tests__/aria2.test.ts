@@ -19,6 +19,7 @@ const { service } = vi.hoisted(() => ({
     RemoveDownload: vi.fn(),
     ResumeDownload: vi.fn(),
     SelectDownloadFiles: vi.fn(),
+    StopDownloadSharing: vi.fn(),
     SyncDownloads: vi.fn(),
   },
 }));
@@ -37,8 +38,10 @@ import {
   addTorrent,
   addUri,
   addUriAtomic,
+  batchFinishSharing,
   changeOption,
   fetchTaskList,
+  finishSharing,
   getFiles,
   getOption,
   pauseTask,
@@ -175,6 +178,29 @@ describe('the download API', () => {
       expect(files[0].path).toBe('/downloads/movie.mkv');
       expect(files[0].length).toBe('1500000000');
       expect(files[0].selected).toBe('true');
+    });
+  });
+
+  describe('the sharing of a download', () => {
+    it('finishSharing stops the sharing through the backend', async () => {
+      // The call was a no-op: the backend had no such method, so the
+      // user was told the sharing had stopped while it went on.
+      service.StopDownloadSharing.mockResolvedValue(undefined);
+
+      await finishSharing({ gid: 'g1' });
+
+      expect(service.StopDownloadSharing).toHaveBeenCalledWith('g1');
+    });
+
+    it('batchFinishSharing stops every sharing and reports the failures', async () => {
+      service.StopDownloadSharing.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('busy'));
+
+      const result = await batchFinishSharing({ gids: ['g1', 'g2'] });
+
+      expect(service.StopDownloadSharing).toHaveBeenCalledTimes(2);
+      expect(result.succeeded).toEqual(['g1']);
+      expect(result.failed).toHaveLength(1);
+      expect(result.failed[0].gid).toBe('g2');
     });
   });
 

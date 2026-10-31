@@ -19,7 +19,12 @@ export function isMetadataTask(task: Aria2Task): boolean {
 export function parseHistoryMeta(record: HistoryRecord): HistoryMeta {
   if (!record.meta) return {}
   try {
-    return JSON.parse(record.meta) as HistoryMeta
+    const parsed: unknown = JSON.parse(record.meta)
+    // A record with no metadata carries the JSON null, and parsing it
+    // gives null. The cast below would hide that, and the first field
+    // read would throw — which took the whole task list down with it.
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+    return parsed as HistoryMeta
   } catch {
     return {}
   }

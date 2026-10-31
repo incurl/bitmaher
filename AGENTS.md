@@ -139,7 +139,8 @@ npm run build                    # tsc && vite build -> frontend/dist
 PATH="$HOME/go/bin:$PATH" wails3 task common:generate:bindings
 PATH="$HOME/go/bin:$PATH" wails3 task common:fetch:aria2    # the bundled binaries
 PATH="$HOME/go/bin:$PATH" wails3 task build               # -> bin/bitmaher
-PATH="$HOME/go/bin:$PATH" wails3 task package             # the platform packages
+PATH="$HOME/go/bin:$PATH" wails3 task tools:build         # the live checks -> bin/
+PATH="$HOME/go/bin:$PATH" wails3 task package             # the platform packages (-> bin/)
 PATH="$HOME/go/bin:$PATH" wails3 task --list-all          # every task, with names
 
 # Audits
@@ -154,6 +155,23 @@ through their namespace: `common:generate:bindings`, `common:fetch:aria2`, `comm
 
 **`wails3 task --summary <name>` executes the task; it does not describe it.** To list, use `wails3 task --list` or
 `wails3 task --list-all`. To inspect without running, use `wails3 task --dry <name>`.
+
+### Every build output goes to `bin/`
+
+`BIN_DIR` in the root `Taskfile.yml` is `bin`, and every task — the application, the server build, the live checks and the
+platform packages — writes there. Nothing is written to the root of the repository, and nothing in `bin/` is in Git.
+
+A bare `go build` run from the root does break that, because Go puts the binary in the working directory. It left a 58 MB
+`bitmaher`, a `pump-check` and a `zoom-check` at the root once, and all three were committed. `.gitignore` now refuses them
+(`/bitmaher`, `/bitmaher-server`, `/*-check`). Build through a task, and the question does not arise:
+
+```bash
+wails3 task build        # bin/bitmaher
+wails3 task tools:build  # every program under tools/, into bin/
+```
+
+`bin/` also holds `pb_data/` when the application has been run from there. **Never delete `bin/` wholesale** — that is the
+user's database, not build output.
 
 ## Change Routing
 

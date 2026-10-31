@@ -51,6 +51,7 @@ tasks:
       - task: generate:syso
         vars:
           ARCH: '{{.ARCH}}'
+      - mkdir -p "{{.BIN_DIR}}"
       - '{{if eq .OBFUSCATED "true"}}garble {{.GARBLE_ARGS}} build{{else}}go build{{end}} {{.BUILD_FLAGS}} -o "{{.BIN_DIR}}/{{.APP_NAME}}.exe"'
       - cmd: powershell Remove-item *.syso
         platforms: [windows]

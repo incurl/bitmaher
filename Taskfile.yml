@@ -41,6 +41,20 @@ tasks:
     cmds:
       - wails3 dev -config ./build/config.yml -port {{.VITE_PORT}}
 
+  tools:build:
+    summary: Builds the live checks into bin/
+    desc: |
+      Builds every program under tools/ into the same bin/ directory as
+      the application, so that a check is never left behind in the root
+      of the repository.
+
+      The checks are normally run with "go run ./tools/<name>", which
+      leaves no binary at all. This task is for the case where one has
+      to be built: a profiler, or a launcher.
+    cmds:
+      - mkdir -p "{{.BIN_DIR}}"
+      - go build -o "{{.BIN_DIR}}" ./tools/...
+
   install:msix:tools:
     summary: Installs tools required for Windows MSIX packaging
     cmds:

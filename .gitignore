@@ -18,6 +18,16 @@ build/android/gen/
 pb_data/
 frontend/bindings/
 
+# A stray build that lands in the root instead of bin/.
+#
+# Every binary of the application goes to bin/, which is ignored above,
+# and every Taskfile task writes there. These catch the case where a
+# bare "go build" was run from the root: the binary it leaves behind is
+# the application itself, or one of the tools of tools/.
+/bitmaher
+/bitmaher-server
+/*-check
+
 # The bundled aria2-next binaries.
 #
 # They are GPLv2 prebuilt executables of around 18 MB each, fetched by

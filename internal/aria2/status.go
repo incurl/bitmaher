@@ -39,6 +39,14 @@ func toDownload(raw rawStatus) Download {
 		download.InfoHash = raw.BitTorrent.InfoHashV1
 	}
 
+	// The engine keeps a finished torrent running so that it seeds,
+	// and the status stays "active" for as long as it does. The two
+	// facts below are what say that the download itself is over.
+	download.Seeder = parseBool(raw.Seeder)
+	if raw.BitTorrent != nil {
+		download.TorrentState = raw.BitTorrent.State
+	}
+
 	// The files of the status are the ones the engine is downloading.
 	for _, file := range raw.Files {
 		download.Files = append(download.Files, toFile(file))

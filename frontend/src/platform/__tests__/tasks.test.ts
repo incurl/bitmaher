@@ -33,6 +33,8 @@ function createMockJob(overrides: Partial<Job> = {}): Job {
     info_hash: '',
     error_code: 0,
     error_message: '',
+    seeder: false,
+    torrent_state: '',
     torrent_file: '',
     selected_files: null,
     options: null,
@@ -66,5 +68,33 @@ describe('toTask', () => {
   it('makes the card show the record title instead of the placeholder', () => {
     const task = toTask(createMockJob())
     expect(getTaskName(task, { defaultName: 'Getting task name...' })).toBe('payload.bin')
+  })
+})
+
+describe('the state of a finished torrent', () => {
+  it('carries the seeder flag of the record', () => {
+    // The engine keeps a finished torrent running so that it seeds, and
+    // the status stays "active" for as long as it does. The flag is the
+    // only thing that says that the download is over.
+    const task = toTask(createMockJob({ kind: 'torrent', seeder: true, status: 'active' }))
+    expect(task.seeder).toBe('true')
+  })
+
+  it('leaves the flag absent when the download is not seeding', () => {
+    const task = toTask(createMockJob({ status: 'active' }))
+    expect(task.seeder).toBeUndefined()
+  })
+
+  it('carries the state of the torrent', () => {
+    const task = toTask(createMockJob({ kind: 'torrent', torrent_state: 'seeding' }))
+    expect(task.bittorrent?.state).toBe('seeding')
+  })
+
+  it('keeps the status of the engine, which is the truth', () => {
+    // The download is still running: it is sharing the content it has.
+    // The status says so, and the flag says that the download itself
+    // is over.
+    const task = toTask(createMockJob({ kind: 'torrent', seeder: true, status: 'active' }))
+    expect(task.status).toBe('active')
   })
 })

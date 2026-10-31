@@ -165,6 +165,17 @@ type Download struct {
 	ErrorCode int `json:"error_code"`
 	// ErrorMessage is the engine's error explanation.
 	ErrorMessage string `json:"error_message"`
+	// Seeder reports that the download is sharing the content it
+	// already has.
+	//
+	// The engine keeps a finished torrent running so that it seeds,
+	// and the status stays "active" for as long as it does. This flag
+	// is what says that the download itself is over.
+	Seeder bool `json:"seeder"`
+	// TorrentState is the state of the torrent itself.
+	//
+	// It is empty for a download that is not a torrent.
+	TorrentState string `json:"torrent_state"`
 	// Files lists the files of the download.
 	Files []File `json:"files"`
 }
@@ -264,23 +275,30 @@ func (e *rpcError) Error() string {
 //
 // Every number is a string in the wire format.
 type rawStatus struct {
-	GID             string     `json:"gid"`
-	Status          string     `json:"status"`
-	TotalLength     string     `json:"totalLength"`
-	CompletedLength string     `json:"completedLength"`
-	UploadLength    string     `json:"uploadLength"`
-	DownloadSpeed   string     `json:"downloadSpeed"`
-	UploadSpeed     string     `json:"uploadSpeed"`
-	Connections     string     `json:"connections"`
-	ErrorCode       string     `json:"errorCode"`
-	ErrorMessage    string     `json:"errorMessage"`
-	Dir             string     `json:"dir"`
-	InfoHash        string     `json:"infoHash"`
-	NumSeeders      string     `json:"numSeeders"`
-	NumPeers        string     `json:"numPeers"`
-	Files           []rawFile  `json:"files"`
-	URIs            []rawURI   `json:"uris"`
-	BitTorrent      *rawBittor `json:"bittorrent"`
+	GID             string `json:"gid"`
+	Status          string `json:"status"`
+	TotalLength     string `json:"totalLength"`
+	CompletedLength string `json:"completedLength"`
+	UploadLength    string `json:"uploadLength"`
+	DownloadSpeed   string `json:"downloadSpeed"`
+	UploadSpeed     string `json:"uploadSpeed"`
+	Connections     string `json:"connections"`
+	ErrorCode       string `json:"errorCode"`
+	ErrorMessage    string `json:"errorMessage"`
+	Dir             string `json:"dir"`
+	InfoHash        string `json:"infoHash"`
+	NumSeeders      string `json:"numSeeders"`
+	NumPeers        string `json:"numPeers"`
+	// Seeder reports that the download is seeding.
+	//
+	// The engine keeps a finished torrent running so that it shares
+	// the content, and the status stays "active" for as long as it
+	// does. This flag is the only thing that says that the download
+	// is over.
+	Seeder     string     `json:"seeder"`
+	Files      []rawFile  `json:"files"`
+	URIs       []rawURI   `json:"uris"`
+	BitTorrent *rawBittor `json:"bittorrent"`
 }
 
 // rawFile is one file as the engine reports it.
@@ -304,6 +322,12 @@ type rawBittor struct {
 	InfoHashV1 string   `json:"infoHashV1"`
 	MagnetLink string   `json:"magnetLink"`
 	Info       *rawInfo `json:"info"`
+	// State is the state of the torrent itself.
+	//
+	// It is what tells a torrent that is fetching its metadata from
+	// one that is checking its pieces, and one that is sharing the
+	// content it already has.
+	State string `json:"state"`
 }
 
 // rawInfo is the torrent metadata.

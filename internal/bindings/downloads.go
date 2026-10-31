@@ -52,6 +52,17 @@ type DownloadView struct {
 	ErrorCode int `json:"error_code"`
 	// ErrorMessage is the human readable failure explanation.
 	ErrorMessage string `json:"error_message"`
+	// Seeder reports that the download is sharing the content it
+	// already has.
+	//
+	// The engine keeps a finished torrent running so that it seeds,
+	// and the status stays "active" for as long as it does. This flag
+	// is what says that the download itself is over.
+	Seeder bool `json:"seeder"`
+	// TorrentState is the state of the torrent itself.
+	//
+	// It is empty for a download that is not a torrent.
+	TorrentState string `json:"torrent_state"`
 	// SelectedFiles lists the indexes of the files chosen inside a
 	// torrent.
 	SelectedFiles []int `json:"selected_files"`
@@ -85,6 +96,8 @@ func toView(job downloads.Job) DownloadView {
 		InfoHash:        job.InfoHash,
 		ErrorCode:       job.ErrorCode,
 		ErrorMessage:    job.ErrorMessage,
+		Seeder:          job.Seeder,
+		TorrentState:    job.TorrentState,
 		SelectedFiles:   job.SelectedFiles,
 		Options:         job.Options,
 		Progress:        job.Progress(),

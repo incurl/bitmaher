@@ -342,7 +342,7 @@ func (s *Service) recordHistory(job Job) {
 		s.error("the moment the download was added could not be saved: " + err.Error())
 	}
 
-	if !job.IsFinished() {
+	if !job.IsFinished() && !job.IsSeeding() {
 		return
 	}
 
@@ -350,7 +350,14 @@ func (s *Service) recordHistory(job Job) {
 	switch status {
 	case StatusComplete, StatusError, StatusRemoved:
 	default:
-		return
+		// A torrent that is seeding has finished: the content is on
+		// the disk, and the engine is sharing it. The engine keeps
+		// the status "active" for as long as it seeds, so the history
+		// records the download as the completed one it is.
+		if !job.IsSeeding() {
+			return
+		}
+		status = StatusComplete
 	}
 
 	addedAt := job.Created
@@ -426,6 +433,8 @@ func toJob(download aria2.Download, store *Store) Job {
 		InfoHash:        download.InfoHash,
 		ErrorCode:       download.ErrorCode,
 		ErrorMessage:    download.ErrorMessage,
+		Seeder:          download.Seeder,
+		TorrentState:    download.TorrentState,
 		SelectedFiles:   []int{},
 		Options:         map[string]string{},
 	}

@@ -107,6 +107,17 @@ type Job struct {
 	ErrorCode int `json:"error_code"`
 	// ErrorMessage is the human readable failure explanation.
 	ErrorMessage string `json:"error_message"`
+	// Seeder reports that the download is sharing the content it
+	// already has.
+	//
+	// The engine keeps a finished torrent running so that it seeds,
+	// and the status stays "active" for as long as it does. This flag
+	// is what says that the download itself is over.
+	Seeder bool `json:"seeder"`
+	// TorrentState is the state of the torrent itself.
+	//
+	// It is empty for a download that is not a torrent.
+	TorrentState string `json:"torrent_state"`
 	// TorrentFile is the PocketBase file id of the uploaded .torrent.
 	//
 	// It is empty for a download that has no torrent file.
@@ -144,6 +155,16 @@ func (j Job) IsActive() bool {
 // IsFinished reports whether the download has come to rest.
 func (j Job) IsFinished() bool {
 	return j.Status == StatusComplete || j.Status == StatusError || j.Status == StatusRemoved
+}
+
+// IsSeeding reports whether the download is sharing the content it
+// already has.
+//
+// The engine keeps a finished torrent running so that it seeds, and the
+// status stays "active" for as long as it does. The flag is what says
+// that the download itself is over.
+func (j Job) IsSeeding() bool {
+	return j.Seeder && j.Status == StatusActive
 }
 
 // Store keeps the download records in PocketBase.
@@ -196,6 +217,8 @@ func (s *Store) Save(job Job) (Job, error) {
 	record.Set("info_hash", job.InfoHash)
 	record.Set("error_code", job.ErrorCode)
 	record.Set("error_message", job.ErrorMessage)
+	record.Set("seeder", job.Seeder)
+	record.Set("torrent_state", job.TorrentState)
 	if job.TorrentFile != "" {
 		record.Set("torrent_file", job.TorrentFile)
 	}
@@ -496,6 +519,8 @@ func recordToJob(record *core.Record) Job {
 		InfoHash:        record.GetString("info_hash"),
 		ErrorCode:       record.GetInt("error_code"),
 		ErrorMessage:    record.GetString("error_message"),
+		Seeder:          record.GetBool("seeder"),
+		TorrentState:    record.GetString("torrent_state"),
 		TorrentFile:     record.GetString("torrent_file"),
 		SelectedFiles:   []int{},
 		Options:         map[string]string{},

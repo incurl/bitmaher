@@ -156,6 +156,34 @@ func TestJobProgressAndState(t *testing.T) {
 	}
 }
 
+// TestASeedingTorrentIsOver verifies the state of a torrent that is
+// sharing the content it already has.
+//
+// The engine keeps a finished torrent running so that it seeds, and the
+// status stays "active" for as long as it does. The flag is what says
+// that the download itself is over.
+func TestASeedingTorrentIsOver(t *testing.T) {
+	seeding := Job{Status: StatusActive, Seeder: true}
+	if !seeding.IsSeeding() {
+		t.Error("the job should be reported as seeding")
+	}
+	if seeding.IsFinished() {
+		t.Error("a seeding job is still running, so it is not at rest")
+	}
+
+	// A download that is not seeding is not over: it is still fetching.
+	downloading := Job{Status: StatusActive}
+	if downloading.IsSeeding() {
+		t.Error("a downloading job should not be reported as seeding")
+	}
+
+	// A torrent whose seed time is over is not seeding any more.
+	stopped := Job{Status: StatusComplete, Seeder: false}
+	if stopped.IsSeeding() {
+		t.Error("a stopped job should not be reported as seeding")
+	}
+}
+
 // TestToJobKeepsTheApplicationsOwnFields verifies that the fields the
 // engine does not report are kept.
 //

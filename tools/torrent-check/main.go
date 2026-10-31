@@ -128,7 +128,95 @@ func main() {
 	}
 	fmt.Printf("6. The record holds the choice: %v\n", stored.SelectedFiles)
 
+	// A torrent that has finished keeps running, so that it shares the
+	// content it has. The engine reports it as "active" with the flag
+	// that says it is seeding, and the application has to record it as
+	// the completed download it is.
+	if err := checkSeedingTorrent(ctx, service, dir); err != nil {
+		fmt.Println("   FAIL:", err)
+		os.Exit(1)
+	}
+	fmt.Println("7. A seeding torrent is recorded as the completed download it is")
+
 	fmt.Println("\nTORRENT SELECTION: PASS")
+}
+
+// checkSeedingTorrent verifies that a torrent that is sharing the content
+// it already has is recorded as a completed download.
+//
+// The engine keeps a finished torrent running so that it seeds, and the
+// status stays "active" for as long as it does. The flag that says it is
+// seeding is the only thing that says that the download itself is over,
+// and it was dropped: the download stayed in the progress list for ever
+// and the completed list was empty.
+func checkSeedingTorrent(ctx context.Context, service *downloads.Service, dir string) error {
+	// The content is already there, so the engine verifies the pieces
+	// and goes straight to seeding.
+	content := bytes.Repeat([]byte("S"), 32768)
+	pieceLength := 16384
+	pieces := []byte{}
+	for offset := 0; offset < len(content); offset += pieceLength {
+		end := offset + pieceLength
+		if end > len(content) {
+			end = len(content)
+		}
+		sum := sha1.Sum(content[offset:end])
+		pieces = append(pieces, sum[:]...)
+	}
+	torrent := bencode(map[string]any{
+		"info": map[string]any{
+			"name":         "seeding.bin",
+			"piece length": pieceLength,
+			"pieces":       pieces,
+			"length":       len(content),
+		},
+	})
+	if err := os.WriteFile(filepath.Join(dir, "seeding.bin"), content, 0o600); err != nil {
+		return fmt.Errorf("write the content: %w", err)
+	}
+
+	job, err := service.Add(ctx, downloads.AddRequest{
+		Kind:          downloads.KindTorrent,
+		TorrentBase64: base64.StdEncoding.EncodeToString(torrent),
+		TorrentName:   "seeding.torrent",
+		Dir:           dir,
+	})
+	if err != nil {
+		return fmt.Errorf("add the torrent: %w", err)
+	}
+
+	// The engine needs a moment to verify the pieces and to start
+	// seeding.
+	seeding := false
+	for i := 0; i < 40; i++ {
+		time.Sleep(500 * time.Millisecond)
+		if _, err := service.Sync(ctx); err != nil {
+			return fmt.Errorf("sync: %w", err)
+		}
+		stored, err := service.Get(job.ID)
+		if err != nil {
+			return fmt.Errorf("read the record: %w", err)
+		}
+		if stored.Seeder {
+			seeding = true
+			break
+		}
+	}
+	if !seeding {
+		return fmt.Errorf("the torrent never started seeding")
+	}
+
+	// The download is in the history, as the completed one it is.
+	records, err := service.History().Records(downloads.HistoryStatusComplete)
+	if err != nil {
+		return fmt.Errorf("read the history: %w", err)
+	}
+	for _, record := range records {
+		if record.GID == job.GID {
+			return nil
+		}
+	}
+	return fmt.Errorf("the seeding torrent is not in the history")
 }
 
 // buildTorrent builds a small multi-file torrent.

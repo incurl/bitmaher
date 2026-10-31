@@ -297,3 +297,63 @@ func TestTheServiceRemovesADownloadThatHasComeToRest(t *testing.T) {
 		t.Error("the record is still there")
 	}
 }
+
+// TestASeedingTorrentJoinsTheHistory verifies that a torrent that is
+// sharing the content it already has is recorded as a completed
+// download.
+//
+// The engine keeps a finished torrent running so that it seeds, and the
+// status stays "active" for as long as it does. The flag is what says
+// that the download itself is over, and the history is where a
+// finished download is recorded.
+func TestASeedingTorrentJoinsTheHistory(t *testing.T) {
+	service := newTestService(t)
+
+	service.recordHistory(Job{
+		GID:             "seeding123",
+		Kind:            "torrent",
+		Status:          StatusActive,
+		Seeder:          true,
+		TorrentState:    "seeding",
+		Title:           "Big Buck Bunny",
+		Dir:             "/downloads",
+		TotalLength:     524288,
+		CompletedLength: 524288,
+	})
+
+	record, found, err := service.history.RecordByGID("seeding123")
+	if err != nil {
+		t.Fatalf("read the record: %v", err)
+	}
+	if !found {
+		t.Fatal("the seeding torrent is not in the history")
+	}
+	if record.Status != HistoryStatusComplete {
+		t.Errorf("status = %q, want %q", record.Status, HistoryStatusComplete)
+	}
+	if record.Name != "Big Buck Bunny" {
+		t.Errorf("name = %q", record.Name)
+	}
+}
+
+// TestADownloadThatIsStillGoingJoinsNoHistory verifies that a download
+// that is still fetching is not recorded as finished.
+func TestADownloadThatIsStillGoingJoinsNoHistory(t *testing.T) {
+	service := newTestService(t)
+
+	service.recordHistory(Job{
+		GID:    "busy123",
+		Kind:   "http",
+		Status: StatusActive,
+		Title:  "payload.bin",
+		Dir:    "/downloads",
+	})
+
+	_, found, err := service.history.RecordByGID("busy123")
+	if err != nil {
+		t.Fatalf("read the record: %v", err)
+	}
+	if found {
+		t.Error("a download that is still going should not be in the history")
+	}
+}

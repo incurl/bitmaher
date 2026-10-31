@@ -128,6 +128,66 @@ func TestToDownloadReadsTheEnginePayload(t *testing.T) {
 	}
 }
 
+// TestToDownloadReadsTheSeederFlag verifies the flag that says that a
+// torrent is sharing the content it already has.
+//
+// The engine keeps a finished torrent running so that it seeds, and the
+// status stays "active" for as long as it does. The flag is the only
+// thing that says that the download itself is over, and it was dropped:
+// the download stayed in the progress list for ever.
+func TestToDownloadReadsTheSeederFlag(t *testing.T) {
+	raw := rawStatus{
+		GID:             "abc123",
+		Status:          "active",
+		Seeder:          "true",
+		TotalLength:     "1048576",
+		CompletedLength: "1048576",
+		BitTorrent: &rawBittor{
+			InfoHashV1: "deadbeef",
+			Info:       &rawInfo{Name: "Big Buck Bunny"},
+			State:      "seeding",
+		},
+	}
+
+	download := toDownload(raw)
+
+	if !download.Seeder {
+		t.Error("the download should be reported as seeding")
+	}
+	if download.TorrentState != "seeding" {
+		t.Errorf("torrent state = %q, want seeding", download.TorrentState)
+	}
+	// The status is the engine's truth: the download is still running,
+	// and it is sharing the content it has.
+	if download.Status != StatusActive {
+		t.Errorf("status = %q, want active", download.Status)
+	}
+}
+
+// TestToDownloadOfAFinishedTorrentIsNotSeeding verifies that a torrent
+// that has stopped seeding is not reported as seeding.
+//
+// The engine reports "stopped" for a torrent whose seed time is over.
+func TestToDownloadOfAFinishedTorrentIsNotSeeding(t *testing.T) {
+	raw := rawStatus{
+		GID:             "abc123",
+		Status:          "complete",
+		Seeder:          "false",
+		CompletedLength: "1048576",
+		TotalLength:     "1048576",
+		BitTorrent:      &rawBittor{State: "stopped"},
+	}
+
+	download := toDownload(raw)
+
+	if download.Seeder {
+		t.Error("a stopped torrent should not be reported as seeding")
+	}
+	if download.Status != StatusComplete {
+		t.Errorf("status = %q, want complete", download.Status)
+	}
+}
+
 // TestToDownloadUsesTheTorrentName verifies that the torrent's name is
 // preferred over the file name.
 //

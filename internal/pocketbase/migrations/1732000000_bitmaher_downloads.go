@@ -56,6 +56,12 @@ func createDownloadSchema(app core.App) error {
 		&core.TextField{Name: "info_hash", Max: 100},
 		&core.NumberField{Name: "error_code"},
 		&core.TextField{Name: "error_message", Max: 2000},
+		// The download is sharing the content it already has. The
+		// engine keeps a finished torrent running so that it seeds,
+		// and the status stays "active" for as long as it does: these
+		// two fields are what say that the download itself is over.
+		&core.BoolField{Name: "seeder"},
+		&core.TextField{Name: "torrent_state", Max: 40},
 		// The .torrent file the user uploaded. It is a PocketBase
 		// file field, so it is served by the built-in file route and
 		// inherits the collection's rules.

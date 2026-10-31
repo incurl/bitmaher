@@ -11,7 +11,7 @@
  * normalisation on the other side of the boundary.
  */
 import type { Job } from '../../bindings/github.com/incurl/bitmaher/internal/downloads/models';
-import type { Aria2File, Aria2Task, TaskSnapshot, TaskStatus } from '@shared/types';
+import type { Aria2BtState, Aria2File, Aria2Task, TaskSnapshot, TaskStatus } from '@shared/types';
 
 /**
  * The statuses of a task.
@@ -64,6 +64,17 @@ export function toTask(job: Job): Aria2Task {
   if (job.kind === 'torrent' || job.kind === 'magnet') {
     task.infoHash = job.info_hash || undefined;
     task.numSeeders = String(job.seeders ?? 0);
+  }
+
+  // The engine keeps a finished torrent running so that it seeds, and
+  // the status stays "active" for as long as it does. The flag is what
+  // says that the download itself is over, and the state of the torrent
+  // is what the panel shows.
+  if (job.seeder) {
+    task.seeder = 'true';
+  }
+  if (job.torrent_state) {
+    task.bittorrent = { ...task.bittorrent, state: job.torrent_state as Aria2BtState };
   }
 
   if (job.error_message) {

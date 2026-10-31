@@ -687,6 +687,11 @@ $ grep -oE '/[^ ]*(gallium|drm|gbm|libGL)[^ ]*' /proc/$(pgrep -x zoom-check)/map
 
 `libEGL_mesa` is what pulls the driver in, and it is what opens the render node.
 
+The whole investigation, with every measurement that was taken and a prompt that guides a code
+agent through the same failure in another project, is in
+[`docs/troubleshooting-linux-webview-graphics.md`](../troubleshooting-linux-webview-graphics.md).
+It applies to Tauri 2 and Wry as well, which draw their webview with the same WebKitGTK.
+
 The renderer is found through the PCI bus, and through the DMI of the machine when there is no card to
 ask:
 

@@ -201,6 +201,24 @@ different database and a different key file. Check the data directory first.
 
 ---
 
+## The webview on Linux
+
+### `context mismatch in svga_surface_destroy`
+
+The VMware SVGA3D driver tears a surface down on a thread that does not own the GL context that
+created it, and it says so. The message comes from the driver, and the application is fine.
+
+The fix is **not** the one people reach for first: `WEBKIT_DISABLE_COMPOSITING_MODE=1` and
+`GSK_RENDERER=cairo` were both measured and both do nothing here. The graphics stack is still
+loaded, and it still opens the render node of the card, so the driver is still engaged.
+**`LIBGL_ALWAYS_SOFTWARE=1`** is the one that keeps the card closed.
+
+The whole investigation, with every measurement and the prompt for a code agent, is in
+**[docs/troubleshooting-linux-webview-graphics.md](troubleshooting-linux-webview-graphics.md)**.
+It applies to Tauri 2 and Wry as well.
+
+---
+
 ## The audits
 
 ### `tools/license-audit.py` reports `UNKNOWN` for a module

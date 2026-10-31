@@ -323,6 +323,15 @@ func (s *AppService) ResumeDownload(ctx context.Context, id string) error {
 	return s.downloads.Resume(ctx, id)
 }
 
+// StopDownloadSharing stops the sharing of a download.
+//
+// The engine has no call for it, so the download is removed from the
+// engine, which ends the sharing. The files are left on the disk, and
+// so is the record: the download is in the history.
+func (s *AppService) StopDownloadSharing(ctx context.Context, id string) error {
+	return s.downloads.StopSharing(ctx, id)
+}
+
 // RemoveDownload removes a download from the engine and forgets it.
 //
 // The downloaded files are left on disk.

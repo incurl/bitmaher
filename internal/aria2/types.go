@@ -25,6 +25,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 )
 
 // Status is the normalised status of a download.
@@ -269,6 +270,43 @@ func (e *rpcError) Error() string {
 		return ""
 	}
 	return fmt.Sprintf("aria2 error %d: %s", e.Code, e.Message)
+}
+
+// The engine refuses to pause a download that is not running, and it
+// says so with this message. It is not a failure of the call: it says
+// that the download has come to rest, which is what the caller wanted
+// anyway.
+const cannotBePausedNow = "cannot be paused now"
+
+// The engine refuses to resume a download that is not paused, and it
+// says so with this message. It is not a failure of the call either.
+const cannotBeUnpausedNow = "cannot be unpaused now"
+
+// IsNotPausableNow answers whether the engine refused the request
+// because the download is no longer running.
+//
+// The pause of a download is a race: the download may finish between
+// the moment the caller reads its state and the moment it asks for the
+// pause. The engine refuses that pause, and the refusal carries no
+// information the caller did not already have.
+func IsNotPausableNow(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), cannotBePausedNow)
+}
+
+// IsNotResumableNow answers whether the engine refused the request
+// because the download is not paused.
+//
+// The resume is a race as well: the download may have been removed, or
+// it may have come to rest, between the moment the caller read its
+// state and the moment it asked for the resume.
+func IsNotResumableNow(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), cannotBeUnpausedNow)
 }
 
 // rawStatus is the status of a download as the engine reports it.

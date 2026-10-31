@@ -89,6 +89,7 @@ var expectedMethods = []string{
 	"SetWindowDecorations",
 	"ShowInFolder",
 	"Shutdown",
+	"StopDownloadSharing",
 	"StoreClear",
 	"StoreDelete",
 	"StoreKeys",

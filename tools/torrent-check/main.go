@@ -138,6 +138,25 @@ func main() {
 	}
 	fmt.Println("7. A seeding torrent is recorded as the completed download it is")
 
+	// Stopping the sharing has to end it: the task must not go on
+	// saying that it is sharing.
+	if err := checkStopSharing(ctx, service, dir); err != nil {
+		fmt.Println("   FAIL:", err)
+		os.Exit(1)
+	}
+	fmt.Println("8. Stopping the sharing ends it, and the task is deactivated")
+
+	// The same, for a download that is paused already.
+	//
+	// The engine refuses to pause a paused download with "cannot be
+	// paused now", and the download the user has paused is the one they
+	// want to stop sharing.
+	if err := checkStopSharingWhilePaused(ctx, service, dir); err != nil {
+		fmt.Println("   FAIL:", err)
+		os.Exit(1)
+	}
+	fmt.Println("9. Stopping the sharing of a paused download ends it as well")
+
 	fmt.Println("\nTORRENT SELECTION: PASS")
 }
 
@@ -217,6 +236,249 @@ func checkSeedingTorrent(ctx context.Context, service *downloads.Service, dir st
 		}
 	}
 	return fmt.Errorf("the seeding torrent is not in the history")
+}
+
+// checkStopSharing verifies that stopping the sharing ends it.
+//
+// The engine has no call for it: a torrent that has finished keeps
+// running so that it seeds. The download is removed from the engine,
+// which ends the sharing at once, and the record has to say that the
+// download is over: it went on saying "active", so the task went on
+// sharing.
+func checkStopSharing(ctx context.Context, service *downloads.Service, dir string) error {
+	content := bytes.Repeat([]byte("T"), 32768)
+	pieceLength := 16384
+	pieces := []byte{}
+	for offset := 0; offset < len(content); offset += pieceLength {
+		end := offset + pieceLength
+		if end > len(content) {
+			end = len(content)
+		}
+		sum := sha1.Sum(content[offset:end])
+		pieces = append(pieces, sum[:]...)
+	}
+	torrent := bencode(map[string]any{
+		"info": map[string]any{
+			"name":         "stopping.bin",
+			"piece length": pieceLength,
+			"pieces":       pieces,
+			"length":       len(content),
+		},
+	})
+	if err := os.WriteFile(filepath.Join(dir, "stopping.bin"), content, 0o600); err != nil {
+		return fmt.Errorf("write the content: %w", err)
+	}
+
+	job, err := service.Add(ctx, downloads.AddRequest{
+		Kind:          downloads.KindTorrent,
+		TorrentBase64: base64.StdEncoding.EncodeToString(torrent),
+		TorrentName:   "stopping.torrent",
+		Dir:           dir,
+	})
+	if err != nil {
+		return fmt.Errorf("add the torrent: %w", err)
+	}
+
+	// The engine needs a moment to verify the pieces and to start
+	// seeding.
+	for i := 0; i < 40; i++ {
+		time.Sleep(500 * time.Millisecond)
+		if _, err := service.Sync(ctx); err != nil {
+			return fmt.Errorf("sync: %w", err)
+		}
+		stored, err := service.Get(job.ID)
+		if err != nil {
+			return fmt.Errorf("read the record: %w", err)
+		}
+		if stored.Seeder {
+			break
+		}
+	}
+
+	// The sharing is stopped.
+	if err := service.StopSharing(ctx, job.GID); err != nil {
+		return fmt.Errorf("stop the sharing: %w", err)
+	}
+
+	// The record has to say that the download is over.
+	stored, err := service.Get(job.ID)
+	if err != nil {
+		return fmt.Errorf("read the record: %w", err)
+	}
+	if stored.Status != downloads.StatusRemoved {
+		return fmt.Errorf("the record says %q, want %q", stored.Status, downloads.StatusRemoved)
+	}
+	if stored.Seeder {
+		return fmt.Errorf("the record still says that the download is seeding")
+	}
+
+	// And the engine must not hold the download any more. This is the
+	// part that matters: the sharing is not stopped in the interface,
+	// it is stopped in the engine.
+	client := service.Manager().Client()
+	if client == nil {
+		return fmt.Errorf("the engine is not running")
+	}
+	active, err := client.Active(ctx)
+	if err != nil {
+		return fmt.Errorf("read the running downloads: %w", err)
+	}
+	for _, download := range active {
+		if download.GID == job.GID {
+			return fmt.Errorf("the engine still runs the download")
+		}
+	}
+	waiting, err := client.Waiting(ctx, 0, 200)
+	if err != nil {
+		return fmt.Errorf("read the queued downloads: %w", err)
+	}
+	for _, download := range waiting {
+		if download.GID == job.GID {
+			return fmt.Errorf("the engine still queues the download (status %q, seeder %v)", download.Status, download.Seeder)
+		}
+	}
+
+	// The engine is asked about the download itself. It either does not
+	// know it any more, or it knows it as a stopped one: it is not
+	// seeding, and it is not running.
+	status, err := client.Status(ctx, job.GID)
+	if err == nil {
+		if status.Status == aria2.StatusActive {
+			return fmt.Errorf("the engine still says the download is running")
+		}
+		if status.Seeder {
+			return fmt.Errorf("the engine still says the download is seeding")
+		}
+		if !status.Status.Terminal() {
+			return fmt.Errorf("the engine says the download is %q, want it at rest", status.Status)
+		}
+	}
+
+	// And the files are still on the disk: the sharing was stopped, the
+	// download was not thrown away.
+	if _, err := os.Stat(filepath.Join(dir, "stopping.bin")); err != nil {
+		return fmt.Errorf("the content is gone: %w", err)
+	}
+
+	return nil
+}
+
+// checkStopSharingWhilePaused verifies that a download that is paused
+// already can be stopped.
+//
+// The engine refuses to pause a download that is paused: it answers
+// with "cannot be paused now". A download the user has paused is the
+// one they want to stop sharing, and the pause must not be asked for
+// again.
+func checkStopSharingWhilePaused(ctx context.Context, service *downloads.Service, dir string) error {
+	content := bytes.Repeat([]byte("P"), 32768)
+	pieceLength := 16384
+	pieces := []byte{}
+	for offset := 0; offset < len(content); offset += pieceLength {
+		end := offset + pieceLength
+		if end > len(content) {
+			end = len(content)
+		}
+		sum := sha1.Sum(content[offset:end])
+		pieces = append(pieces, sum[:]...)
+	}
+	torrent := bencode(map[string]any{
+		"info": map[string]any{
+			"name":         "paused.bin",
+			"piece length": pieceLength,
+			"pieces":       pieces,
+			"length":       len(content),
+		},
+	})
+	if err := os.WriteFile(filepath.Join(dir, "paused.bin"), content, 0o600); err != nil {
+		return fmt.Errorf("write the content: %w", err)
+	}
+
+	job, err := service.Add(ctx, downloads.AddRequest{
+		Kind:          downloads.KindTorrent,
+		TorrentBase64: base64.StdEncoding.EncodeToString(torrent),
+		TorrentName:   "paused.torrent",
+		Dir:           dir,
+	})
+	if err != nil {
+		return fmt.Errorf("add the torrent: %w", err)
+	}
+
+	// The engine needs a moment to verify the pieces and to start
+	// seeding.
+	for i := 0; i < 40; i++ {
+		time.Sleep(500 * time.Millisecond)
+		if _, err := service.Sync(ctx); err != nil {
+			return fmt.Errorf("sync: %w", err)
+		}
+		stored, err := service.Get(job.ID)
+		if err != nil {
+			return fmt.Errorf("read the record: %w", err)
+		}
+		if stored.Seeder {
+			break
+		}
+	}
+
+	// The download is paused, the way the user leaves it.
+	if err := service.Pause(ctx, job.GID); err != nil {
+		return fmt.Errorf("pause the download: %w", err)
+	}
+	stored, err := service.Get(job.ID)
+	if err != nil {
+		return fmt.Errorf("read the record: %w", err)
+	}
+	if stored.Status != downloads.StatusPaused {
+		return fmt.Errorf("the record says %q, want %q", stored.Status, downloads.StatusPaused)
+	}
+
+	// Pausing it again is not a failure: the engine refuses it, and the
+	// user asked for what the download is already in.
+	if err := service.Pause(ctx, job.GID); err != nil {
+		return fmt.Errorf("pausing a paused download should not fail: %w", err)
+	}
+
+	// The sharing is stopped.
+	if err := service.StopSharing(ctx, job.GID); err != nil {
+		return fmt.Errorf("stop the sharing: %w", err)
+	}
+
+	stored, err = service.Get(job.ID)
+	if err != nil {
+		return fmt.Errorf("read the record: %w", err)
+	}
+	if stored.Status != downloads.StatusRemoved {
+		return fmt.Errorf("the record says %q, want %q", stored.Status, downloads.StatusRemoved)
+	}
+	if stored.Seeder {
+		return fmt.Errorf("the record still says that the download is seeding")
+	}
+
+	// And the engine must not hold the download any more.
+	client := service.Manager().Client()
+	if client == nil {
+		return fmt.Errorf("the engine is not running")
+	}
+	waiting, err := client.Waiting(ctx, 0, 200)
+	if err != nil {
+		return fmt.Errorf("read the queued downloads: %w", err)
+	}
+	for _, download := range waiting {
+		if download.GID == job.GID {
+			return fmt.Errorf("the engine still queues the download")
+		}
+	}
+	active, err := client.Active(ctx)
+	if err != nil {
+		return fmt.Errorf("read the running downloads: %w", err)
+	}
+	for _, download := range active {
+		if download.GID == job.GID {
+			return fmt.Errorf("the engine still runs the download")
+		}
+	}
+
+	return nil
 }
 
 // buildTorrent builds a small multi-file torrent.

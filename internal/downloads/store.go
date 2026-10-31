@@ -147,6 +147,19 @@ func (j Job) Progress() float64 {
 	return done
 }
 
+// IsComplete reports whether the download has all of its content.
+//
+// The engine does not always say so: a download the user paused keeps
+// the status "paused" even when everything is on the disk, and a
+// torrent that is seeding keeps the status "active". The lengths are
+// what say that the download itself is over.
+func (j Job) IsComplete() bool {
+	if j.TotalLength <= 0 {
+		return false
+	}
+	return j.CompletedLength >= j.TotalLength
+}
+
 // IsActive reports whether the download is doing something.
 func (j Job) IsActive() bool {
 	return j.Status == StatusActive || j.Status == StatusWaiting || j.Status == StatusPaused

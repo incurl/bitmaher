@@ -2,6 +2,7 @@ package downloads
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/incurl/bitmaher/internal/aria2"
@@ -355,5 +356,259 @@ func TestADownloadThatIsStillGoingJoinsNoHistory(t *testing.T) {
 	}
 	if found {
 		t.Error("a download that is still going should not be in the history")
+	}
+}
+
+// TestStoppingTheSharingDeactivatesTheDownload verifies that the record
+// says that the download is over once the sharing has been stopped.
+//
+// The engine has no call for it, so the download is removed from the
+// engine. The record went on saying "active" and "seeding", so the task
+// went on sharing: the status is what deactivates it.
+func TestStoppingTheSharingDeactivatesTheDownload(t *testing.T) {
+	service := newTestService(t)
+
+	// The record of a download that is sharing the content it has.
+	job := Job{
+		GID:             "sharing123",
+		Kind:            "torrent",
+		Status:          StatusActive,
+		Seeder:          true,
+		TorrentState:    "seeding",
+		Title:           "Big Buck Bunny",
+		Dir:             "/downloads",
+		TotalLength:     524288,
+		CompletedLength: 524288,
+	}
+	if _, err := service.store.Save(job); err != nil {
+		t.Fatalf("save the record: %v", err)
+	}
+
+	// The sharing is stopped. The engine is not running, so the removal
+	// fails, and the record must not have changed: a download that is
+	// still sharing is still sharing.
+	if err := service.StopSharing(context.Background(), job.GID); err == nil {
+		t.Fatal("the removal should have failed without an engine")
+	}
+
+	stored, err := service.store.GetByGID(job.GID)
+	if err != nil {
+		t.Fatalf("read the record: %v", err)
+	}
+	if stored.Status != StatusActive {
+		t.Errorf("status = %q, want %q", stored.Status, StatusActive)
+	}
+	if !stored.Seeder {
+		t.Error("the record should still say that the download is seeding")
+	}
+}
+
+// TestADownloadWhoseSharingWasStoppedJoinsTheHistory verifies that a
+// download whose sharing was stopped is recorded as the removed one it
+// is.
+//
+// The record says that the download is over, and the history is where
+// the user still finds it: the download is not lost, it has come to
+// rest.
+func TestADownloadWhoseSharingWasStoppedJoinsTheHistory(t *testing.T) {
+	service := newTestService(t)
+
+	service.recordHistory(Job{
+		GID:             "stopped123",
+		Kind:            "torrent",
+		Status:          StatusRemoved,
+		Seeder:          false,
+		Title:           "Big Buck Bunny",
+		Dir:             "/downloads",
+		TotalLength:     524288,
+		CompletedLength: 524288,
+	})
+
+	record, found, err := service.history.RecordByGID("stopped123")
+	if err != nil {
+		t.Fatalf("read the record: %v", err)
+	}
+	if !found {
+		t.Fatal("the download is not in the history")
+	}
+	if record.Status != HistoryStatusRemoved {
+		t.Errorf("status = %q, want %q", record.Status, HistoryStatusRemoved)
+	}
+}
+
+// TestPausingAPausedDownloadIsNotAFailure verifies that a download
+// that is paused already can be paused again.
+//
+// The engine refuses to pause a paused download with "cannot be
+// paused now", and the refusal was reported as the failure of the
+// whole operation. The user asked for what the download is already in.
+func TestPausingAPausedDownloadIsNotAFailure(t *testing.T) {
+	service := newTestService(t)
+
+	// The record of a download the user has paused.
+	job := Job{
+		GID:             "paused123",
+		Kind:            "torrent",
+		Status:          StatusPaused,
+		Seeder:          true,
+		TorrentState:    "paused",
+		Title:           "Big Buck Bunny",
+		Dir:             "/downloads",
+		TotalLength:     524288,
+		CompletedLength: 524288,
+	}
+	if _, err := service.store.Save(job); err != nil {
+		t.Fatalf("save the record: %v", err)
+	}
+
+	// The engine is not running, so the pause cannot be asked for at
+	// all. The point of the check is that the refusal of the engine
+	// ("cannot be paused now") is not what comes back: the download is
+	// already paused, and there is nothing to ask for.
+	err := service.Pause(context.Background(), job.GID)
+	if err != nil && !errors.Is(err, aria2.ErrNotRunning) {
+		t.Fatalf("pausing a paused download should not fail: %v", err)
+	}
+
+	// And the record is untouched.
+	stored, err := service.store.GetByGID(job.GID)
+	if err != nil {
+		t.Fatalf("read the record: %v", err)
+	}
+	if stored.Status != StatusPaused {
+		t.Errorf("status = %q, want %q", stored.Status, StatusPaused)
+	}
+}
+
+// TestResumingARunningDownloadIsNotAFailure verifies the same for a
+// download that is running already.
+func TestResumingARunningDownloadIsNotAFailure(t *testing.T) {
+	service := newTestService(t)
+
+	job := Job{
+		GID:         "running123",
+		Kind:        "http",
+		Status:      StatusActive,
+		Title:       "payload.bin",
+		Dir:         "/downloads",
+		TotalLength: 1024,
+	}
+	if _, err := service.store.Save(job); err != nil {
+		t.Fatalf("save the record: %v", err)
+	}
+
+	err := service.Resume(context.Background(), job.GID)
+	if err != nil && !errors.Is(err, aria2.ErrNotRunning) {
+		t.Fatalf("resuming a running download should not fail: %v", err)
+	}
+}
+
+// TestADownloadThatWasPausedAfterItWasFinishedJoinsTheHistory
+// verifies that a download that has all of its content joins the
+// history, even when the engine says it is paused.
+//
+// The engine keeps the status "paused" for a download the user paused,
+// and it says nothing about the content being on the disk. The
+// download is over, and the history is where a finished download is
+// recorded.
+func TestADownloadThatWasPausedAfterItWasFinishedJoinsTheHistory(t *testing.T) {
+	service := newTestService(t)
+
+	service.recordHistory(Job{
+		GID:             "paused123",
+		Kind:            "torrent",
+		Status:          StatusPaused,
+		Title:           "Big Buck Bunny",
+		Dir:             "/downloads",
+		TotalLength:     524288,
+		CompletedLength: 524288,
+	})
+
+	record, found, err := service.history.RecordByGID("paused123")
+	if err != nil {
+		t.Fatalf("read the record: %v", err)
+	}
+	if !found {
+		t.Fatal("the download is not in the history")
+	}
+	if record.Status != HistoryStatusComplete {
+		t.Errorf("status = %q, want %q", record.Status, HistoryStatusComplete)
+	}
+}
+
+// TestADownloadThatWasPausedHalfWayJoinsNoHistory verifies that a
+// download that was paused before it was finished is not recorded as
+// finished.
+func TestADownloadThatWasPausedHalfWayJoinsNoHistory(t *testing.T) {
+	service := newTestService(t)
+
+	service.recordHistory(Job{
+		GID:             "halfway123",
+		Kind:            "http",
+		Status:          StatusPaused,
+		Title:           "payload.bin",
+		Dir:             "/downloads",
+		TotalLength:     524288,
+		CompletedLength: 1024,
+	})
+
+	_, found, err := service.history.RecordByGID("halfway123")
+	if err != nil {
+		t.Fatalf("read the record: %v", err)
+	}
+	if found {
+		t.Error("a download that is not finished should not be in the history")
+	}
+}
+
+// TestARecordWithNoMetadataKeepsItsMetadataEmpty verifies that a
+// record whose metadata was never written does not carry the JSON null
+// back to the interface.
+//
+// The column is a JSON one, and a value that was never written reads
+// back as the literal null. Passing that on hands the frontend a
+// string that parses to null, which is not an object: the record then
+// fails to render, and every task of the list goes with it.
+func TestARecordWithNoMetadataKeepsItsMetadataEmpty(t *testing.T) {
+	service := newTestService(t)
+
+	service.recordHistory(Job{
+		GID:             "nometa123",
+		Kind:            "magnet",
+		Status:          StatusComplete,
+		Title:           "Small Prophets",
+		Dir:             "/downloads",
+		TotalLength:     524288,
+		CompletedLength: 524288,
+	})
+
+	record, found, err := service.history.RecordByGID("nometa123")
+	if err != nil {
+		t.Fatalf("read the record: %v", err)
+	}
+	if !found {
+		t.Fatal("the download is not in the history")
+	}
+	if record.Meta != "" {
+		t.Errorf("meta = %q, want it empty", record.Meta)
+	}
+}
+
+// TestDecodeMetaReadsTheMetadataItUnderstands verifies that the
+// decoder still reads the metadata it is given.
+func TestDecodeMetaReadsTheMetadataItUnderstands(t *testing.T) {
+	for _, written := range []string{
+		`{"infoHash":"abc"}`,
+		` {"completedLength":"42"} `,
+	} {
+		if decoded := decodeMeta([]byte(written)); decoded == "" {
+			t.Errorf("the metadata %q should have been read", written)
+		}
+	}
+
+	for _, empty := range []any{nil, "", []byte(""), []byte("null"), []byte(" null ")} {
+		if decoded := decodeMeta(empty); decoded != "" {
+			t.Errorf("the value %v should decode to nothing, got %q", empty, decoded)
+		}
 	}
 }

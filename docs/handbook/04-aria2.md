@@ -270,6 +270,59 @@ There is also `aria2.forceRemove`, for the case where the engine will not let it
 The right order for a user who deletes a running download is: pause, then remove. The backend does
 that; the frontend does not.
 
+### The other half of the rule: a finished download is not removed either
+
+The engine only removes a download that is **still working**. A download that has come to rest is
+refused, and the refusal says so:
+
+```
+aria2 error 1: Active download not found for GID 28cc7fd839fd7f53
+```
+
+That is measured against aria2-next 3.0.9, and it holds for `aria2.remove` and for
+`aria2.forceRemove` alike. A download that has come to rest is taken out of the engine's own results
+instead, which is what removes it:
+
+```go
+// RemoveResult removes the result of a finished download.
+//
+// It is the only way to take a download that has come to rest out of
+// the engine.
+func (c *Client) RemoveResult(ctx context.Context, gid string) error {
+	return c.call(ctx, methodRemoveResult, []any{gid}, nil)
+}
+```
+
+So the backend reads the state of the download once more before it removes it, and it picks the call
+that the state allows.
+
+### Every one of these calls is a race
+
+The pause of a download is a request, not a fact: the engine answers it at once and pauses the
+download a moment later. A download may also finish in between. The engine refuses both, and the
+refusals carry no information the caller did not already have:
+
+```
+aria2 error 1: GID 0123456789abcdef cannot be paused now
+aria2 error 1: GID 0123456789abcdef cannot be unpaused now
+```
+
+They are recognised as what they are:
+
+```go
+// IsNotPausableNow answers whether the engine refused the request
+// because the download is no longer running.
+func IsNotPausableNow(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), cannotBePausedNow)
+}
+```
+
+A download that is paused already is not paused again, and a download that has come to rest is not
+paused at all: there is nothing left to pause.
+
 ## Nook 8: the engine has to be verified before it is trusted
 
 The manager checks that the binary it started is really aria2-next, because BitMaher is built

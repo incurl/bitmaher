@@ -450,5 +450,14 @@ func decodeMeta(raw any) string {
 	if len(encoded) == 0 {
 		return ""
 	}
+
+	// A JSON field that was never written holds the literal null. That
+	// is not metadata, and passing it on hands the frontend a string
+	// that parses to null, which is not an object: the record then
+	// fails to render, and every task of the list goes with it.
+	if trimmed := strings.TrimSpace(string(encoded)); trimmed == "null" {
+		return ""
+	}
+
 	return string(encoded)
 }

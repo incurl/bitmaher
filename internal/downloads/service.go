@@ -342,7 +342,7 @@ func (s *Service) recordHistory(job Job) {
 		s.error("the moment the download was added could not be saved: " + err.Error())
 	}
 
-	if !job.IsFinished() && !job.IsSeeding() {
+	if !job.IsFinished() && !job.IsSeeding() && !job.IsComplete() {
 		return
 	}
 
@@ -350,11 +350,15 @@ func (s *Service) recordHistory(job Job) {
 	switch status {
 	case StatusComplete, StatusError, StatusRemoved:
 	default:
-		// A torrent that is seeding has finished: the content is on
-		// the disk, and the engine is sharing it. The engine keeps
-		// the status "active" for as long as it seeds, so the history
-		// records the download as the completed one it is.
-		if !job.IsSeeding() {
+		// A download that has all of its content is over, whatever the
+		// engine says about it.
+		//
+		// A torrent that is seeding keeps the status "active" for as
+		// long as it seeds, and a download the user paused keeps the
+		// status "paused". Both of them are over as downloads: the
+		// content is on the disk, and the engine only keeps them for
+		// what they do next.
+		if !job.IsSeeding() && !job.IsComplete() {
 			return
 		}
 		status = StatusComplete
@@ -457,14 +461,56 @@ func toJob(download aria2.Download, store *Store) Job {
 }
 
 // Pause pauses a download.
+//
+// A download that is paused already is not a failure: the engine
+// refuses the pause with "cannot be paused now", and the user asked
+// for what the download is already in.
+//
+// A download that has come to rest is not a failure either: there is
+// nothing left to pause.
 func (s *Service) Pause(ctx context.Context, id string) error {
 	job, client, err := s.resolve(ctx, id)
 	if err != nil {
 		return err
 	}
+
+	// The download is paused already: there is nothing to do, and the
+	// engine would refuse the request.
+	if job.Status == StatusPaused {
+		return nil
+	}
+
+	// The record may be older than the engine: a download that has
+	// finished in between cannot be paused, and the engine refuses the
+	// request. The state is read again, so that the answer is the
+	// truth.
+	status, err := client.Status(ctx, job.GID)
+	if err != nil {
+		// The engine does not know the download any more.
+		return nil
+	}
+	if status.Status.Terminal() {
+		return nil
+	}
+
 	if err := client.Pause(ctx, job.GID); err != nil {
+		// The download finished between the moment its state was read
+		// and the moment the pause was asked for. There is nothing left
+		// to pause, and that is not a failure.
+		if aria2.IsNotPausableNow(err) {
+			return s.syncOne(ctx, client, job.GID)
+		}
 		return fmt.Errorf("the download could not be paused: %w", err)
 	}
+
+	// The pause is a request: the engine answers it at once and pauses
+	// the download a moment later. The record is written after it has
+	// really come to rest, so that the interface does not show a
+	// paused download as running.
+	if err := waitPaused(ctx, client, job.GID); err != nil {
+		s.warn("the download did not come to rest: " + err.Error())
+	}
+
 	s.info(fmt.Sprintf("the download %q was paused", job.Title))
 	return s.syncOne(ctx, client, job.GID)
 }
@@ -495,16 +541,167 @@ func (s *Service) PauseAll(ctx context.Context) error {
 }
 
 // Resume resumes a paused download.
+//
+// A download that is running already is not a failure: the engine
+// refuses the request, and the user asked for what the download is
+// already in.
 func (s *Service) Resume(ctx context.Context, id string) error {
 	job, client, err := s.resolve(ctx, id)
 	if err != nil {
 		return err
 	}
+
+	// The download is running already: there is nothing to do, and the
+	// engine would refuse the request.
+	if job.Status == StatusActive {
+		return nil
+	}
+
+	// The record may be older than the engine: a download that has
+	// been removed, or that has come to rest, cannot be resumed. The
+	// state is read again, so that the answer is the truth.
+	status, err := client.Status(ctx, job.GID)
+	if err != nil {
+		// The engine does not know the download any more.
+		return nil
+	}
+	if status.Status.Terminal() {
+		return nil
+	}
+
 	if err := client.Resume(ctx, job.GID); err != nil {
+		// The download was removed, or it came to rest, between the
+		// moment its state was read and the moment the resume was
+		// asked for. There is nothing left to resume.
+		if aria2.IsNotResumableNow(err) {
+			return s.syncOne(ctx, client, job.GID)
+		}
 		return fmt.Errorf("the download could not be resumed: %w", err)
 	}
 	s.info(fmt.Sprintf("the download %q was resumed", job.Title))
 	return s.syncOne(ctx, client, job.GID)
+}
+
+// StopSharing stops the sharing of a download.
+//
+// The engine has no call for it: a torrent that has finished keeps
+// running so that it seeds, and there is no way to tell it to stop
+// without ending the download. The download is therefore removed from
+// the engine, which stops the sharing at once, and the engine reports
+// it as removed.
+//
+// The files are left on the disk, and so is the record: the download is
+// in the history, and the user can look at it there.
+func (s *Service) StopSharing(ctx context.Context, id string) error {
+	job, client, err := s.resolve(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	// The engine refuses to remove a download that is working, so a
+	// running one is paused first.
+	//
+	// A download that is already paused is not paused again: the engine
+	// refuses that with "cannot be paused now", and the refusal is
+	// reported as the failure of the whole operation. The download is
+	// paused already, so it can be removed as it is.
+	//
+	// The pause has to have taken effect before the download is
+	// removed. The engine answers the removal with a success and keeps
+	// the download in its queue when it is still busy pausing it, so
+	// the sharing would go on while the interface says it stopped.
+	if job.Status == StatusActive || job.Status == StatusWaiting {
+		if err := client.Pause(ctx, job.GID); err != nil {
+			if !aria2.IsNotPausableNow(err) {
+				s.warn("the download could not be paused: " + err.Error())
+			}
+		}
+		if err := waitPaused(ctx, client, job.GID); err != nil {
+			s.warn("the download did not come to rest: " + err.Error())
+		}
+	}
+
+	// The engine only removes a download that is still working: a
+	// download that has come to rest is refused with "Active download
+	// not found". Such a download is taken out of the engine's own
+	// results instead, which is what removes it.
+	//
+	// The download may have finished while it was being paused, so the
+	// state is read again here.
+	known := true
+	status, err := client.Status(ctx, job.GID)
+	if err != nil {
+		// The engine does not know the download any more: it is gone,
+		// and there is nothing left to remove.
+		known = false
+	}
+
+	if !known || status.Status.Terminal() {
+		_ = client.RemoveResult(ctx, job.GID)
+	} else if err := client.Remove(ctx, job.GID); err != nil {
+		return fmt.Errorf("the sharing could not be stopped: %w", err)
+	}
+
+	// The engine's own record of the download goes as well, so that it
+	// does not come back on the next sync.
+	_ = client.RemoveResult(ctx, job.GID)
+
+	// The record says that the download is over. The engine cannot be
+	// asked any more: its own record of the download is gone, so the
+	// status is set here. Without it the record would go on saying
+	// "active", and the task would go on sharing.
+	job.Status = StatusRemoved
+	job.Seeder = false
+	job.TorrentState = ""
+	if _, err := s.store.Save(job); err != nil {
+		return err
+	}
+
+	// The download joins the history, so that the user still finds it.
+	s.recordHistory(job)
+
+	s.info(fmt.Sprintf("the sharing of the download %q was stopped", job.Title))
+	return nil
+}
+
+// waitPaused waits until the engine has really paused a download.
+//
+// The pause is a request, not a fact: the engine answers it at once and
+// pauses the download a moment later. A download that is removed while
+// the engine is still pausing it is not removed: the engine answers
+// with a success and keeps it in its queue, and the removal has to be
+// asked for again.
+//
+// The wait is short, and it gives up rather than holding the caller:
+// the removal is asked for whatever the state of the download is.
+func waitPaused(ctx context.Context, client *aria2.Client, gid string) error {
+	const (
+		attempts = 40
+		delay    = 50 * time.Millisecond
+	)
+
+	for attempt := 0; attempt < attempts; attempt++ {
+		status, err := client.Status(ctx, gid)
+		if err != nil {
+			// The engine does not know the download any more: it is
+			// already gone, which is what was wanted.
+			return nil
+		}
+		if status.Status == aria2.StatusPaused {
+			return nil
+		}
+		if status.Status.Terminal() {
+			return nil
+		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(delay):
+		}
+	}
+
+	return fmt.Errorf("the download did not come to rest")
 }
 
 // Remove removes a download from the engine and forgets it.
@@ -516,8 +713,10 @@ func (s *Service) Resume(ctx context.Context, id string) error {
 // it lives in the history. Removing it means removing it from the
 // history, and the engine has nothing to say about it.
 func (s *Service) Remove(ctx context.Context, id string) error {
-	if removed, err := s.removeFromHistory(id); removed {
+	if removed, err := s.removeFromHistory(id); err != nil {
 		return err
+	} else if removed {
+		return nil
 	}
 
 	job, client, err := s.resolve(ctx, id)
@@ -526,13 +725,43 @@ func (s *Service) Remove(ctx context.Context, id string) error {
 	}
 
 	// A running download has to be paused before it can be removed.
-	if job.IsActive() {
+	//
+	// A download that is already paused is not paused again: the engine
+	// refuses that with "cannot be paused now", and there is no reason
+	// to ask for it.
+	//
+	// The pause has to have taken effect before the removal: the engine
+	// answers the removal with a success and keeps the download in its
+	// queue when it is still busy pausing it.
+	if job.Status == StatusActive || job.Status == StatusWaiting {
 		if err := client.Pause(ctx, job.GID); err != nil {
-			s.warn("the download could not be paused: " + err.Error())
+			if !aria2.IsNotPausableNow(err) {
+				s.warn("the download could not be paused: " + err.Error())
+			}
+		}
+		if err := waitPaused(ctx, client, job.GID); err != nil {
+			s.warn("the download did not come to rest: " + err.Error())
 		}
 	}
 
-	if err := client.Remove(ctx, job.GID); err != nil {
+	// The engine only removes a download that is still working: a
+	// download that has come to rest is refused with "Active download
+	// not found". Such a download is taken out of the engine's own
+	// results instead, which is what removes it.
+	//
+	// The download may have finished while it was being paused, so the
+	// state is read again here.
+	known := true
+	status, err := client.Status(ctx, job.GID)
+	if err != nil {
+		// The engine does not know the download any more: it is gone,
+		// and there is nothing left to remove.
+		known = false
+	}
+
+	if !known || status.Status.Terminal() {
+		_ = client.RemoveResult(ctx, job.GID)
+	} else if err := client.Remove(ctx, job.GID); err != nil {
 		return fmt.Errorf("the download could not be removed: %w", err)
 	}
 

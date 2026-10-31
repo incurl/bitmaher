@@ -597,6 +597,187 @@ Two readers mean two truths.
 
 ---
 
+## 24. The graphics driver complained at the end
+
+**Symptom.** The application printed this on the way out, and nothing else was wrong:
+
+```
+context mismatch in svga_surface_destroy
+```
+
+**The cause.** The message is **not** from this application, and not from GTK or WebKitGTK either. It
+comes from the graphics driver: `svga_surface_destroy` is a function of the **VMware SVGA3D** Gallium
+driver (Mesa's `libgallium`), and `context mismatch in %s` is its debug message. The driver destroys
+the surface of the window on a thread of its own, and it notices that the surface belongs to another
+context.
+
+The machine is a virtual machine, and its only renderer is a software one:
+
+```bash
+$ glxinfo -B | grep -E 'renderer|Accelerated'
+OpenGL renderer string: SVGA3D; build: RELEASE;  LLVM;
+Accelerated: no
+```
+
+**The fix.** The webview is drawn on the CPU there, so that the driver is never asked to destroy a
+surface. **Both** renderers have to be told, and it took two attempts to learn that:
+
+```go
+// gpu_linux.go
+func configureGraphics() {
+	// The user has spoken: their setting is kept.
+	if os.Getenv(webkitDisableCompositing) != "" {
+		return
+	}
+
+	// The software renderers are the ones that tear the surface down
+	// on the wrong thread. A machine with a real GPU keeps it.
+	if hasHardwareRenderer() {
+		return
+	}
+
+	_ = os.Setenv(webkitDisableCompositing, "1")
+
+	// GTK draws the window with a renderer of its own, and that one
+	// creates the GL context. It is told to draw on the CPU as well.
+	if os.Getenv(gtkSoftwareRenderer) == "" {
+		_ = os.Setenv(gtkSoftwareRenderer, gtkCairoRenderer)
+	}
+}
+```
+
+The first attempt set only `WEBKIT_DISABLE_COMPOSITING_MODE`, and the message stayed. The reason is
+that the offending GL context is **not** WebKit's: it is GTK's own renderer, which draws the window
+that the webview sits in. `WEBKIT_DISABLE_COMPOSITING_MODE` stops the web process from compositing,
+and leaves GTK drawing through GL.
+
+The way to see it is to ask GL to say what it does, and to read which process it does it in:
+
+```bash
+$ GDK_DEBUG=gl GSK_RENDERER=cairo ./bin/bitmaher 2>&1 | grep -c drirc
+0
+$ GDK_DEBUG=gl ./bin/bitmaher 2>&1 | grep -c drirc
+34
+```
+
+With `GSK_RENDERER=cairo` the graphics stack is never loaded, so the function that printed the message
+cannot run at all:
+
+```bash
+$ MESA_DEBUG=1 ./bin/bitmaher 2>&1 | grep -ciE 'gallium|svga|swrast'
+0
+```
+
+`GSK_RENDERER` is GTK's own variable, and `cairo` is its documented software fallback
+(`GSK_RENDERER=help` lists it). On a machine whose GL renderer is already software — `Accelerated:
+no` — nothing is lost by it.
+
+The renderer is found through the PCI bus, and through the DMI of the machine when there is no card to
+ask:
+
+```bash
+$ ls /sys/bus/pci/devices/*/driver/module/drivers/
+pci:vmwgfx
+$ cat /sys/class/dmi/id/sys_vendor
+VMware, Inc.
+```
+
+**The lesson.** A message that names no file of this repository is not a bug of this repository. Read
+where the string comes from before changing anything:
+
+```bash
+$ strings /usr/lib/x86_64-linux-gnu/libgallium-*.so | grep -B 4 'context mismatch in %s'
+```
+
+The neighbours of the string are the answer: `SVGA_SWTNL_FSE` and `vmwgfx drm driver` put it in the
+VMware driver.
+
+---
+
+## 25. Every scope showed every task
+
+**Symptom.** The sidebar has four scopes — All, In Progress, Failed, Completed — and every one of
+them showed the whole list. Selecting "Failed" left the finished downloads where they were.
+
+**The cause.** Nothing was wrong with the scopes. The list was **frozen**: the last snapshot that
+reached the interface intact was the one it drew on start-up, from the "All" scope, and no later
+snapshot ever replaced it.
+
+The snapshot publish threw, and the throw was swallowed by the event listener. One history record
+carried the **string** `"null"` as its metadata:
+
+```json
+{"gid": "16e89ebcd6b6daee", "metaType": "string", "metaValue": "null"}
+```
+
+and the parse of that string is `null`, which is not an object:
+
+```ts
+// before
+export function parseHistoryMeta(record: HistoryRecord): HistoryMeta {
+  if (!record.meta) return {}
+  try {
+    return JSON.parse(record.meta) as HistoryMeta   // null, cast to an object
+  } catch {
+    return {}
+  }
+}
+```
+
+The first field read — `meta.completedLength` — threw `null is not an object`. The record could not
+be turned into a task, so `mergeHistoryIntoTasks` threw, so `publishSnapshot` threw, so `taskList`
+was never assigned again. Every scope kept showing the start-up list.
+
+**The fix.** Two layers, because the string should never have been produced, and the parse should
+never have trusted it.
+
+The metadata column is a JSON one, and a value that was never written reads back as the literal
+`null`. The decoder passed it on:
+
+```go
+// A JSON field that was never written holds the literal null. That
+// is not metadata, and passing it on hands the frontend a string
+// that parses to null, which is not an object: the record then
+// fails to render, and every task of the list goes with it.
+if trimmed := strings.TrimSpace(string(encoded)); trimmed == "null" {
+	return ""
+}
+```
+
+And the parse refuses anything that is not an object:
+
+```ts
+const parsed: unknown = JSON.parse(record.meta)
+if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+return parsed as HistoryMeta
+```
+
+**How it was found.** Not by reading the code — by making the running application say what it
+computed. The store wrote each publish to a file:
+
+```
+/tmp/scopeprobe/<time>-<scope>-<count>.json
+
+all-6.json
+all-6.json
+...
+```
+
+and the files stopped at the moment of the first navigation and never resumed, while the route had
+changed and no error appeared. Wrapping the function in a `try`/`catch` that wrote the error gave
+the line:
+
+```
+MESSAGE: null is not an object (evaluating 'n.completedLength')
+SCOPE: failed  PATH: /task/failed
+```
+
+**The lesson.** A union type cast with `as` is a promise, not a check. `JSON.parse` returns `unknown`
+because it really can be anything, including `null`. And when a list "does not filter", ask whether
+it is filtering and not being drawn — the difference is a swallowed exception.
+
+---
+
 ## The patterns behind the failures
 
 Look at the list again and a few shapes appear.

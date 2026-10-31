@@ -273,6 +273,29 @@ interface, text included.
 - **`user-select: none` on a copy button** keeps the button's label out of the text the reader selects.
 - The clipboard fallback must not use `display: none`; it is positioned off-screen with `opacity: 0`.
 
+## The Graphics of the Webview on Linux
+
+`internal/graphics` decides how the webview is drawn, and `graphics.Configure()` is called before the application is
+created. On a machine whose only renderer is a software one, the drawing is moved to the CPU, because the VMware SVGA3D
+driver tears the surface down on the wrong thread and says so:
+
+```
+context mismatch in svga_surface_destroy
+```
+
+Three settings are needed, and they are **independent** — a user may set any of them:
+
+| Variable | What it stops |
+| --- | --- |
+| `WEBKIT_DISABLE_COMPOSITING_MODE` | the web process from compositing with the GPU |
+| `GSK_RENDERER=cairo` | GTK's own renderer from drawing with the GPU |
+| `LIBGL_ALWAYS_SOFTWARE=1` | the graphics stack from opening the render node of the card |
+
+The third one is the one that matters: without it the driver is still engaged, and it still destroys a surface it never
+made. The way to see it is `ls -la /proc/$(pgrep -x <tool>)/fd/ | grep -c renderD128` — three before, zero after.
+
+The renderer is found through the PCI bus and the DMI of the machine. A machine with a real GPU keeps its rendering.
+
 ## What Is Persisted, and Where
 
 **PocketBase is the only record of truth.** Every piece of metadata the application keeps is in the database: there is no

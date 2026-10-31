@@ -1,6 +1,6 @@
 //go:build linux
 
-package main
+package graphics
 
 import "os"
 
@@ -42,27 +42,47 @@ const gtkSoftwareRenderer = "GSK_RENDERER"
 // The value of that variable that draws on the CPU.
 const gtkCairoRenderer = "cairo"
 
-// configureGraphics decides how the webview is drawn.
+// The environment variable that keeps the graphics stack on the CPU.
+//
+// The two settings above are not enough. They stop WebKit and GTK from
+// drawing with the GPU, but the graphics stack is still loaded, and it
+// still opens the render node of the card: the VMware driver, which is
+// the one that tears the surface down on the wrong thread, is asked to
+// destroy a surface it never made. This one keeps the render node
+// closed, so the driver is never engaged at all.
+const alwaysSoftware = "LIBGL_ALWAYS_SOFTWARE"
+
+// Configure decides how the webview is drawn.
 //
 // It is called before the application is created, because the engine
 // reads the environment when the webview is made.
-func configureGraphics() {
-	// The user has spoken: their setting is kept.
-	if os.Getenv(webkitDisableCompositing) != "" {
-		return
-	}
-
-	// The software renderers are the ones that tear the surface down
-	// on the wrong thread. A machine with a real GPU keeps it.
+func Configure() {
+	// The two settings are separate, and a user may set either of them.
+	// They used to be one: a setting of the first one stopped the
+	// second one from being applied, and the driver went on being
+	// asked to destroy the surface.
+	//
+	// A machine with a real GPU keeps its rendering, and the setting
+	// of the user wins over both.
 	if hasHardwareRenderer() {
 		return
 	}
 
-	_ = os.Setenv(webkitDisableCompositing, "1")
+	if os.Getenv(webkitDisableCompositing) == "" {
+		_ = os.Setenv(webkitDisableCompositing, "1")
+	}
 
 	// GTK draws the window with a renderer of its own, and that one
 	// creates the GL context. It is told to draw on the CPU as well.
 	if os.Getenv(gtkSoftwareRenderer) == "" {
 		_ = os.Setenv(gtkSoftwareRenderer, gtkCairoRenderer)
+	}
+
+	// The graphics stack is still loaded with the two settings above,
+	// and it still opens the render node of the card. This one keeps
+	// the card closed, so that the driver is never asked to destroy a
+	// surface it did not make.
+	if os.Getenv(alwaysSoftware) == "" {
+		_ = os.Setenv(alwaysSoftware, "1")
 	}
 }

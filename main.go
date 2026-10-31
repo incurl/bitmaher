@@ -31,6 +31,7 @@ import (
 	"github.com/incurl/bitmaher/internal/bindings"
 	"github.com/incurl/bitmaher/internal/console"
 	"github.com/incurl/bitmaher/internal/downloads"
+	"github.com/incurl/bitmaher/internal/graphics"
 	"github.com/incurl/bitmaher/internal/pocketbase"
 	"github.com/incurl/bitmaher/internal/pump"
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -71,7 +72,7 @@ func run() error {
 	// renderer is a software one tears the surface down on the wrong
 	// thread when the window goes away. The drawing is moved to the
 	// CPU there, before the application is made.
-	configureGraphics()
+	graphics.Configure()
 
 	// --- The restart ------------------------------------------------
 	// A restart starts the new instance as the old one goes down. The

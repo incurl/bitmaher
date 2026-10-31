@@ -623,25 +623,31 @@ Accelerated: no
 surface. **Both** renderers have to be told, and it took two attempts to learn that:
 
 ```go
-// gpu_linux.go
-func configureGraphics() {
-	// The user has spoken: their setting is kept.
-	if os.Getenv(webkitDisableCompositing) != "" {
-		return
-	}
-
-	// The software renderers are the ones that tear the surface down
-	// on the wrong thread. A machine with a real GPU keeps it.
+// internal/graphics/graphics_linux.go
+func Configure() {
+	// A machine with a real GPU keeps its rendering, and the setting
+	// of the user wins over both.
 	if hasHardwareRenderer() {
 		return
 	}
 
-	_ = os.Setenv(webkitDisableCompositing, "1")
+	// WebKit does not composite with the GPU.
+	if os.Getenv(webkitDisableCompositing) == "" {
+		_ = os.Setenv(webkitDisableCompositing, "1")
+	}
 
 	// GTK draws the window with a renderer of its own, and that one
 	// creates the GL context. It is told to draw on the CPU as well.
 	if os.Getenv(gtkSoftwareRenderer) == "" {
 		_ = os.Setenv(gtkSoftwareRenderer, gtkCairoRenderer)
+	}
+
+	// The graphics stack is still loaded with the two settings above,
+	// and it still opens the render node of the card. This one keeps
+	// the card closed, so that the driver is never asked to destroy a
+	// surface it did not make.
+	if os.Getenv(alwaysSoftware) == "" {
+		_ = os.Setenv(alwaysSoftware, "1")
 	}
 }
 ```
@@ -651,26 +657,35 @@ that the offending GL context is **not** WebKit's: it is GTK's own renderer, whi
 that the webview sits in. `WEBKIT_DISABLE_COMPOSITING_MODE` stops the web process from compositing,
 and leaves GTK drawing through GL.
 
-The way to see it is to ask GL to say what it does, and to read which process it does it in:
+That was not enough either. The graphics stack is **still loaded**, and it still opens the render
+node of the card, so the VMware driver is still asked to destroy a surface it never made:
 
 ```bash
-$ GDK_DEBUG=gl GSK_RENDERER=cairo ./bin/bitmaher 2>&1 | grep -c drirc
-0
-$ GDK_DEBUG=gl ./bin/bitmaher 2>&1 | grep -c drirc
-34
+$ ls -la /proc/$(pgrep -x zoom-check)/fd/ | grep -c renderD128
+3
 ```
 
-With `GSK_RENDERER=cairo` the graphics stack is never loaded, so the function that printed the message
-cannot run at all:
+The card is closed as well, with `LIBGL_ALWAYS_SOFTWARE=1`. The render node is then never opened,
+the driver is never engaged, and the function that printed the message cannot run:
 
 ```bash
-$ MESA_DEBUG=1 ./bin/bitmaher 2>&1 | grep -ciE 'gallium|svga|swrast'
+$ ls -la /proc/$(pgrep -x zoom-check)/fd/ | grep -c renderD128
 0
 ```
 
-`GSK_RENDERER` is GTK's own variable, and `cairo` is its documented software fallback
-(`GSK_RENDERER=help` lists it). On a machine whose GL renderer is already software — `Accelerated:
-no` — nothing is lost by it.
+The three settings are independent, and a user may set any of them. They used to be one: the
+setting of the first one stopped the second from being applied, and the message stayed.
+
+The way to see which library is at fault is to read the maps of the running process:
+
+```bash
+$ grep -oE '/[^ ]*(gallium|drm|gbm|libGL)[^ ]*' /proc/$(pgrep -x zoom-check)/maps | sort -u
+/usr/lib/x86_64-linux-gnu/libEGL_mesa.so.0.0.0
+/usr/lib/x86_64-linux-gnu/libgallium-25.0.7-2+deb13u1.so
+/usr/lib/x86_64-linux-gnu/libgbm.so.1.0.0
+```
+
+`libEGL_mesa` is what pulls the driver in, and it is what opens the render node.
 
 The renderer is found through the PCI bus, and through the DMI of the machine when there is no card to
 ask:

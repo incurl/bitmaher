@@ -1,6 +1,6 @@
 //go:build linux
 
-package main
+package graphics
 
 import (
 	"os"
@@ -50,9 +50,10 @@ func TestTheSoftwareRenderersAreRecognised(t *testing.T) {
 func TestTheGraphicsAreTurnedOffOnASoftwareRenderer(t *testing.T) {
 	t.Setenv(webkitDisableCompositing, "")
 	t.Setenv(gtkSoftwareRenderer, "")
+	t.Setenv(alwaysSoftware, "")
 	t.Setenv("WEBKIT_RENDERER", "pci:vmwgfx")
 
-	configureGraphics()
+	Configure()
 
 	if os.Getenv(webkitDisableCompositing) != "1" {
 		t.Error("the compositing should be turned off on a software renderer")
@@ -62,6 +63,11 @@ func TestTheGraphicsAreTurnedOffOnASoftwareRenderer(t *testing.T) {
 	if os.Getenv(gtkSoftwareRenderer) != gtkCairoRenderer {
 		t.Error("GTK should draw on the CPU on a software renderer")
 	}
+	// The graphics stack is loaded even with the two settings above, and
+	// it still opens the render node of the card.
+	if os.Getenv(alwaysSoftware) != "1" {
+		t.Error("the graphics stack should stay on the CPU on a software renderer")
+	}
 }
 
 // TestTheGraphicsAreKeptOnARealGPU verifies that a machine with a GPU
@@ -69,9 +75,10 @@ func TestTheGraphicsAreTurnedOffOnASoftwareRenderer(t *testing.T) {
 func TestTheGraphicsAreKeptOnARealGPU(t *testing.T) {
 	t.Setenv(webkitDisableCompositing, "")
 	t.Setenv(gtkSoftwareRenderer, "")
+	t.Setenv(alwaysSoftware, "")
 	t.Setenv("WEBKIT_RENDERER", "NVIDIA GeForce RTX 3080/PCIe/SSE2")
 
-	configureGraphics()
+	Configure()
 
 	if os.Getenv(webkitDisableCompositing) != "" {
 		t.Error("the compositing should be left alone on a machine with a GPU")
@@ -84,17 +91,42 @@ func TestTheGraphicsAreKeptOnARealGPU(t *testing.T) {
 // TestTheUserKeepsTheirOwnSetting verifies that a setting of the user
 // is not touched.
 //
-// The environment variable is the way to turn the compositing on and
-// off by hand, and a user who has set it has said what they want.
+// The environment variables are the way to turn the rendering on and
+// off by hand, and a user who has set one has said what they want.
 func TestTheUserKeepsTheirOwnSetting(t *testing.T) {
 	t.Setenv(webkitDisableCompositing, "0")
-	t.Setenv(gtkSoftwareRenderer, "")
+	t.Setenv(gtkSoftwareRenderer, "gl")
 	t.Setenv("WEBKIT_RENDERER", "pci:vmwgfx")
 
-	configureGraphics()
+	Configure()
 
 	if os.Getenv(webkitDisableCompositing) != "0" {
 		t.Error("the setting of the user should be kept")
+	}
+	if os.Getenv(gtkSoftwareRenderer) != "gl" {
+		t.Error("the setting of the user should be kept")
+	}
+}
+
+// TestTheTwoSettingsAreIndependent verifies that one setting of the
+// user does not silence the other.
+//
+// They used to be one: the setting of the compositing of WebKit stopped
+// the renderer of GTK from being set, and the driver went on being
+// asked to destroy the surface.
+func TestTheTwoSettingsAreIndependent(t *testing.T) {
+	t.Setenv(webkitDisableCompositing, "1")
+	t.Setenv(gtkSoftwareRenderer, "")
+	t.Setenv(alwaysSoftware, "")
+	t.Setenv("WEBKIT_RENDERER", "pci:vmwgfx")
+
+	Configure()
+
+	if os.Getenv(webkitDisableCompositing) != "1" {
+		t.Error("the setting of the user should be kept")
+	}
+	if os.Getenv(gtkSoftwareRenderer) != gtkCairoRenderer {
+		t.Error("the renderer of GTK should be set even when the other one is")
 	}
 }
 
@@ -110,6 +142,7 @@ func TestTheUserKeepsTheirOwnSetting(t *testing.T) {
 func TestAnUnknownRendererIsLeftAlone(t *testing.T) {
 	t.Setenv(webkitDisableCompositing, "")
 	t.Setenv(gtkSoftwareRenderer, "")
+	t.Setenv(alwaysSoftware, "")
 	t.Setenv("WEBKIT_RENDERER", "")
 
 	// The machine of the check decides what is expected.
@@ -118,7 +151,7 @@ func TestAnUnknownRendererIsLeftAlone(t *testing.T) {
 	if virtual {
 		// The machine is a virtual one: its renderer is a software
 		// one, and the graphics are turned off.
-		configureGraphics()
+		Configure()
 		if os.Getenv(webkitDisableCompositing) != "1" {
 			t.Error("the compositing should be turned off on a virtual machine")
 		}
@@ -129,7 +162,7 @@ func TestAnUnknownRendererIsLeftAlone(t *testing.T) {
 		t.Error("an unknown renderer should be left alone")
 	}
 
-	configureGraphics()
+	Configure()
 
 	if os.Getenv(webkitDisableCompositing) != "" {
 		t.Error("an unknown renderer should keep the compositing")

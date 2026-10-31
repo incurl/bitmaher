@@ -11,6 +11,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/incurl/bitmaher/internal/graphics"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
@@ -18,6 +19,11 @@ import (
 const zoom = 1.25
 
 func main() {
+	// The window of this check is drawn the way the application draws
+	// it, so that the check does not leave the driver complaining on
+	// the way out.
+	graphics.Configure()
+
 	app := application.New(application.Options{
 		Name: "BitMaher",
 	})

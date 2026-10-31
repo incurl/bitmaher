@@ -66,6 +66,13 @@ func main() {
 
 // run bootstraps the backend and starts the Wails application.
 func run() error {
+	// --- The graphics of the webview --------------------------------
+	// The webview is drawn by the GPU, and a machine whose only
+	// renderer is a software one tears the surface down on the wrong
+	// thread when the window goes away. The drawing is moved to the
+	// CPU there, before the application is made.
+	configureGraphics()
+
 	// --- The restart ------------------------------------------------
 	// A restart starts the new instance as the old one goes down. The
 	// old one still holds the database when it does, so the new one
